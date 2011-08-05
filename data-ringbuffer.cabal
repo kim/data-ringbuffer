@@ -1,20 +1,20 @@
-Name:                vector-ringbuffer
+Name:                data-ringbuffer
 Version:             0.1
 Synopsis:            Ringbuffer implementation using Vectors, inspired by the "Disruptor Pattern"
-Homepage:            https://github.com/kim/vector-ringbuffer
+Homepage:            https://github.com/kim/data-ringbuffer
 License:             OtherLicense
 License-file:        LICENSE
 Author:              Kim Altintop
 Maintainer:          kim.altintop@gmail.com
-Category:            Concurrency
+Category:            Data, Concurrency
 Build-type:          Simple
 Stability:           Experimental
 Cabal-version:       >=1.2
 
 
 Library
-  Exposed-modules: Data.Vector.RingBuffer
-  Build-depends:   base >= 3, vector, transformers
+  Exposed-modules: Data.RingBuffer
+  Build-depends:   base >= 3, transformers
   Other-modules:
   ghc-options:     -Wall -O2
   hs-source-dirs:  src

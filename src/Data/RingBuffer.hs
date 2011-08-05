@@ -1,6 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
 
-module Data.Vector.RingBuffer
+module Data.RingBuffer
   ( RingBuffer
   , Consumer
   , Entry
