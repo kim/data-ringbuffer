@@ -12,7 +12,7 @@ size :: Int
 size = 1024*32
 
 events :: [Int]
-events = [0..30000]
+events = [0..300000]
 
 main = do
   consumer <- newConsumer (\x -> print x)

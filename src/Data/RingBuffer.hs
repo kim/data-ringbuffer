@@ -20,17 +20,19 @@ import Data.IORef
 
 import Prelude hiding (seq, min)
 
+import qualified Data.Vector as V
+
 import Debug.Trace
 
 
 data RingBuffer a = RingBuffer
   { cursor  :: {-# UNPACK #-} !(IORef Int)
-  , entries :: ![Entry a]
+  , entries :: {-# UNPACK #-} !(V.Vector (Entry a))
   }
 
 data Entry a = Entry
-  { value :: IORef a
-  , entrySequence :: IORef Int
+  { value :: {-# UNPACK #-} !(IORef a)
+  , entrySequence :: {-# UNPACK #-} !(IORef Int)
   }
 
 data Consumer a = Consumer
@@ -47,7 +49,7 @@ data ProducerBarrier a = ProducerBarrier
 newRingBuffer :: Int -> a -> IO (RingBuffer a)
 newRingBuffer size e = do
   c  <- newIORef (-1)
-  es <- mapM id $ replicate (ceilNextPowerOfTwo size) (newEntry e)
+  es <- V.replicateM (ceilNextPowerOfTwo size) (newEntry e)
   return $ RingBuffer c es
 {-# INLINE newRingBuffer #-}
 
@@ -73,10 +75,10 @@ newProducerBarrier cs = do
 push :: RingBuffer a -> ProducerBarrier a -> a -> IO ()
 push b p v = do
   let s = producerSequence p
-      l = (length . entries $ b) - 1
+      l = (V.length . entries $ b) - 1
   i <- atomicModifyIORef s (\old -> (old + 1, old + 1))
   ensureConsumersAreInRange i
-  let entry = entries b !! (i .&. l)
+  let entry = entries b V.! (i .&. l)
       val   = value entry
       seq   = entrySequence entry
       cur   = cursor b
@@ -84,11 +86,10 @@ push b p v = do
   writeIORef cur i
   writeIORef val v
   where
-    ensureConsumersAreInRange (-1) = ensureConsumersAreInRange 0
     ensureConsumersAreInRange i = do
       xs <- mapM (readIORef . consumerSequence) (consumers p)
       let min  = minimum xs
-          wrap = i - (length . entries $ b)
+          wrap = i - (V.length . entries $ b)
       unless (wrap <= min) $ yield >> ensureConsumersAreInRange i
 
 consume :: RingBuffer a -> [Consumer a] -> IO ()
@@ -98,11 +99,11 @@ consume buf (c:cs) = do
       es   = entries buf
   cseq' <- readIORef cseq
   avail <- waitFor cseq'
-  batch <- filterM (\e -> (\seq -> seq > cseq' && seq <= avail) <$>
-                          (readIORef . entrySequence) e) es >>=
-           mapM (readIORef . value)
+  batch <- V.filterM (\e -> (\seq -> seq > cseq' && seq <= avail) <$>
+                            (readIORef . entrySequence) e) es >>=
+           V.mapM (readIORef . value)
   writeIORef cseq avail
-  mapM_ (consumeFn c) batch
+  V.mapM_ (consumeFn c) batch
   consume buf cs
   where
     waitFor :: Int -> IO Int
