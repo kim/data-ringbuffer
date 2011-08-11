@@ -1,7 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 
 module Data.RingBuffer
-  ( RingBuffer
+  ( RingBuffer(..)
   , Consumer(..)
   , Entry
   , ProducerBarrier
@@ -12,6 +12,7 @@ module Data.RingBuffer
   , consume
   ) where
 
+import Control.Applicative
 import Control.Concurrent
 import Control.Monad
 import Data.Bits
@@ -27,7 +28,10 @@ data RingBuffer a = RingBuffer
   , entries :: ![Entry a]
   }
 
-newtype Entry a = Entry { value :: IORef a }
+data Entry a = Entry
+  { value :: IORef a
+  , entrySequence :: IORef Int
+  }
 
 data Consumer a = Consumer
   { consumeFn :: a -> IO ()
@@ -49,8 +53,9 @@ newRingBuffer size e = do
 
 newEntry :: a -> IO (Entry a)
 newEntry v = do
-  s <- newIORef v
-  return $ Entry s
+  val <- newIORef v
+  seq <- newIORef (-1)
+  return $ Entry val seq
 {-# INLINE newEntry #-}
 
 newConsumer :: (a -> IO ()) -> IO (Consumer a)
@@ -69,30 +74,33 @@ push :: RingBuffer a -> ProducerBarrier a -> a -> IO ()
 push b p v = do
   let s = producerSequence p
       l = (length . entries $ b) - 1
-      inc i = (i + 1) .&. l
-  i <- atomicModifyIORef s (\old -> (inc old, inc old))
+  i <- atomicModifyIORef s (\old -> (old + 1, old + 1))
   ensureConsumersAreInRange i
-  let val = value $ entries b !! i
-      cur = cursor b
+  let entry = entries b !! (i .&. l)
+      val   = value entry
+      seq   = entrySequence entry
+      cur   = cursor b
+  writeIORef seq i
   writeIORef cur i
-  trace ("push @" ++ show i) writeIORef val v
+  writeIORef val v
   where
-    ensureConsumersAreInRange :: Int -> IO ()
+    ensureConsumersAreInRange (-1) = ensureConsumersAreInRange 0
     ensureConsumersAreInRange i = do
       xs <- mapM (readIORef . consumerSequence) (consumers p)
       let min  = minimum xs
-          wrap = i - min
-      trace ("min:" ++ show min ++ " wrap:" ++ show wrap) unless (wrap > min) $ yield >> ensureConsumersAreInRange i
+          wrap = i - (length . entries $ b)
+      unless (wrap <= min) $ yield >> ensureConsumersAreInRange i
 
 consume :: RingBuffer a -> [Consumer a] -> IO ()
 consume _ [] = return ()
 consume buf (c:cs) = do
   let cseq = consumerSequence c
       es   = entries buf
-      delta a b = if a == b then 1 else a - b
-  nseq  <- readIORef cseq >>= \seq -> return $ seq + 1
-  avail <- trace("waitFor " ++ show nseq) waitFor nseq
-  batch <- mapM (readIORef . value) $ slice es nseq (delta avail nseq)
+  cseq' <- readIORef cseq
+  avail <- waitFor cseq'
+  batch <- filterM (\e -> (\seq -> seq > cseq' && seq <= avail) <$>
+                          (readIORef . entrySequence) e) es >>=
+           mapM (readIORef . value)
   writeIORef cseq avail
   mapM_ (consumeFn c) batch
   consume buf cs
@@ -100,12 +108,9 @@ consume buf (c:cs) = do
     waitFor :: Int -> IO Int
     waitFor seq = do
       avail <- readIORef . cursor $ buf
-      if seq < avail then return avail else trace ("seq:" ++ show seq ++ " avail:" ++ show avail) yield >> waitFor seq
-
-slice :: [a] -> Int -> Int -> [a]
-slice xs i j = map snd
-               $ filter (\(x,_) -> x >= i && x <= j)
-               $ zip [1..] xs
+      if seq < avail
+        then return avail
+        else yield >> waitFor seq
 
 ceilNextPowerOfTwo :: Int -> Int
 ceilNextPowerOfTwo i = shiftL 1 (32 - numberOfLeadingZeros (i - 1))

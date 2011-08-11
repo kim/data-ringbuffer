@@ -1,24 +1,39 @@
-module Simple1P1C where
+module Main where
 
 import Control.Concurrent
+import Control.Exception
 import Control.Monad
 import Data.RingBuffer
 import Data.IORef
 
 import Debug.Trace
 
+size :: Int
+size = 1024*32
+
+events :: [Int]
+events = [0..30000]
+
 main = do
-  consumer <- newConsumer (\x -> print $ "consumed: " ++ show x)
+  consumer <- newConsumer (\x -> print x)
   barrier  <- newProducerBarrier [consumer]
-  buf      <- newRingBuffer 10 0
+  buf      <- newRingBuffer size 0
   done     <- newEmptyMVar
-  forkIO $ mapM (push' buf barrier) [1..20] >> return ()
-  forkIO (consume' buf consumer >> putMVar done 1)
-  -- takeMVar done >> print "done"
-  print "k"
+  pdone    <- newEmptyMVar
+  expseq   <- newIORef $ last events
+
+  forkIO $ do
+    mapM (push buf barrier) events
+    c <- readIORef . cursor $ buf
+    trace ("push done") putMVar pdone c
+  forkIO $ consume' buf consumer expseq `finally` trace ("consumer stopped") putMVar done 1
+
+  cur <- takeMVar pdone
+  trace ("cursor @ " ++ show cur) writeIORef expseq cur
+  takeMVar done >> print "done"
   where
-    consume' b c@(Consumer _ cs) = do
-      trace ("xxx") consume b [c]
-      s <- readIORef cs
-      if s > 10 then return () else consume' b c
-    push' buf barr i = trace ("yyy:" ++ show i) push buf barr i
+    consume' b c@(Consumer _ cs) ex = do
+      consume b [c]
+      seq <- readIORef cs
+      exp <- readIORef ex
+      unless (seq >= exp) $ consume' b c ex
