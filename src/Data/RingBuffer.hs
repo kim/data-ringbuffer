@@ -3,7 +3,6 @@
 module Data.RingBuffer
   ( RingBuffer(..)
   , Consumer(..)
-  , Entry
   , ProducerBarrier
   , newRingBuffer
   , newConsumer
@@ -12,7 +11,6 @@ module Data.RingBuffer
   , consume
   ) where
 
-import Control.Applicative
 import Control.Concurrent
 import Control.Monad
 import Data.Bits
@@ -20,19 +18,14 @@ import Data.IORef
 
 import Prelude hiding (seq, min)
 
-import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as V
 
 import Debug.Trace
 
 
 data RingBuffer a = RingBuffer
   { cursor  :: {-# UNPACK #-} !(IORef Int)
-  , entries :: {-# UNPACK #-} !(V.Vector (Entry a))
-  }
-
-data Entry a = Entry
-  { value :: {-# UNPACK #-} !(IORef a)
-  , entrySequence :: {-# UNPACK #-} !(IORef Int)
+  , entries :: {-# UNPACK #-} !(V.IOVector a)
   }
 
 data Consumer a = Consumer
@@ -49,16 +42,9 @@ data ProducerBarrier a = ProducerBarrier
 newRingBuffer :: Int -> a -> IO (RingBuffer a)
 newRingBuffer size e = do
   c  <- newIORef (-1)
-  es <- V.replicateM (ceilNextPowerOfTwo size) (newEntry e)
+  es <- V.replicate (ceilNextPowerOfTwo size) e
   return $ RingBuffer c es
 {-# INLINE newRingBuffer #-}
-
-newEntry :: a -> IO (Entry a)
-newEntry v = do
-  val <- newIORef v
-  seq <- newIORef (-1)
-  return $ Entry val seq
-{-# INLINE newEntry #-}
 
 newConsumer :: (a -> IO ()) -> IO (Consumer a)
 newConsumer fn = do
@@ -75,16 +61,10 @@ newProducerBarrier cs = do
 push :: RingBuffer a -> ProducerBarrier a -> a -> IO ()
 push b p v = do
   let s = producerSequence p
-      l = (V.length . entries $ b) - 1
   i <- atomicModifyIORef s (\old -> (old + 1, old + 1))
-  ensureConsumersAreInRange i
-  let entry = entries b V.! (i .&. l)
-      val   = value entry
-      seq   = entrySequence entry
-      cur   = cursor b
-  writeIORef seq i
-  writeIORef cur i
-  writeIORef val v
+  {-# SCC "in_range" #-} ensureConsumersAreInRange i
+  V.write (entries b) (i .&. ringModMask b) v
+  writeIORef (cursor b) i
   where
     ensureConsumersAreInRange i = do
       xs <- mapM (readIORef . consumerSequence) (consumers p)
@@ -97,13 +77,12 @@ consume _ [] = return ()
 consume buf (c:cs) = do
   let cseq = consumerSequence c
       es   = entries buf
+      m    = ringModMask buf
   cseq' <- readIORef cseq
-  avail <- waitFor cseq'
-  batch <- V.filterM (\e -> (\seq -> seq > cseq' && seq <= avail) <$>
-                            (readIORef . entrySequence) e) es >>=
-           V.mapM (readIORef . value)
+  avail <- {-# SCC "wait_for" #-} waitFor cseq'
+  batch <- {-# SCC "slice_batch" #-} mapM (\x -> V.read es (x .&. m)) [(cseq' + 1)..avail]
+  mapM_ (consumeFn c) batch
   writeIORef cseq avail
-  V.mapM_ (consumeFn c) batch
   consume buf cs
   where
     waitFor :: Int -> IO Int
@@ -125,3 +104,6 @@ numberOfLeadingZeros i = nolz i 1
               | shiftR i' 28 == 0 = nolz (shiftL i' 4)  (n +  4)
               | shiftR i' 30 == 0 = nolz (shiftL i' 2)  (n +  2)
               | otherwise = n - (shiftR i' 31)
+
+ringModMask :: RingBuffer a -> Int
+ringModMask b = (V.length . entries $ b) - 1
