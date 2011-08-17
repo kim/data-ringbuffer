@@ -6,6 +6,7 @@ import Control.DeepSeq
 import Control.Exception
 import Control.Monad
 import Data.RingBuffer
+import Data.Int
 import Data.IORef
 
 import Debug.Trace
@@ -13,8 +14,8 @@ import Debug.Trace
 size :: Int
 size = 1024*32
 
-iterations :: Int
-iterations = 3000000
+iterations :: Int64
+iterations = 500000000
 
 main :: IO ()
 main = do

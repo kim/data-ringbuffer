@@ -14,6 +14,7 @@ module Data.RingBuffer
 import Control.Concurrent
 import Control.Monad
 import Data.Bits
+import Data.Int
 import Data.IORef
 
 import qualified Data.Vector.Mutable as V
@@ -22,25 +23,28 @@ import qualified Data.Vector.Mutable as V
 
 
 data RingBuffer a = RingBuffer
-     {-# UNPACK #-} !(IORef Int)     -- ^ cursor
+     {-# UNPACK #-} !(IORef Int64)   -- ^ cursor
      {-# UNPACK #-} !(V.IOVector a)  -- ^ entries
-                    Int              -- ^ ring mod mask (size - 1)
+                    Int64            -- ^ size
+                    Int64            -- ^ ring mod mask (size - 1)
 
 
 data Consumer a = Consumer
-                  (a -> IO ())  -- ^ consuming function
-   {-# UNPACK #-} !(IORef Int)  -- ^ consumer sequence
+                  (a -> IO ())    -- ^ consuming function
+   {-# UNPACK #-} !(IORef Int64)  -- ^ consumer sequence
 
 data ProducerBarrier a = ProducerBarrier
-                         [Consumer a]     -- ^ consumers to track
-          {-# UNPACK #-} !(IORef Int)     -- ^ producer sequence
+                         [Consumer a]    -- ^ consumers to track
+          {-# UNPACK #-} !(IORef Int64)  -- ^ producer sequence
 
 
 newRingBuffer :: Int -> a -> IO (RingBuffer a)
 newRingBuffer size e = do
   c  <- newIORef (-1)
   es <- V.replicate (ceilNextPowerOfTwo size) e
-  return $ RingBuffer c es (V.length es - 1)
+  let s = fromIntegral . V.length $ es
+      m = s - 1
+  return $ RingBuffer c es s m
 {-# INLINE newRingBuffer #-}
 
 newConsumer :: (a -> IO ()) -> IO (Consumer a)
@@ -56,26 +60,27 @@ newProducerBarrier cs = do
 {-# INLINE newProducerBarrier #-}
 
 push :: RingBuffer a -> ProducerBarrier a -> a -> IO ()
-push (RingBuffer cursor entries m)
+push (RingBuffer cursor entries l m)
      (ProducerBarrier consumers pseq)
      v = do
   i <- atomicModifyIORef pseq (\old -> (old + 1, old + 1))
   {-# SCC "in_range" #-} ensureConsumersAreInRange i
-  V.write entries (i .&. m) v
+  V.write entries (rmod i m) v
   writeIORef cursor i
   where
     ensureConsumersAreInRange i = do
       xs <- mapM (\(Consumer _ s) -> readIORef s) consumers
-      let mins = minimum xs
-          wrap = i - V.length entries
+      let mins = fromIntegral . minimum $ xs
+          wrap = i - l
       unless (wrap <= mins) $ yield >> ensureConsumersAreInRange i
 
 consume :: RingBuffer a -> [Consumer a] -> IO ()
 consume _ [] = return ()
-consume b@(RingBuffer cursor entries m) (Consumer f cseq : cs) = do
+consume b@(RingBuffer cursor entries _ m) (Consumer f cseq : cs) = do
   cseq' <- readIORef cseq
   avail <- {-# SCC "wait_for" #-} waitFor cseq'
-  batch <- {-# SCC "slice_batch" #-} mapM (\x -> V.read entries (x .&. m)) [(cseq' + 1)..avail]
+  batch <- {-# SCC "slice_batch" #-}
+           mapM (\x -> V.read entries (rmod x m)) [(cseq' + 1)..avail]
   mapM_ f batch
   writeIORef cseq avail
   consume b cs
@@ -95,3 +100,6 @@ numberOfLeadingZeros i = nolz i 1
               | shiftR i' 28 == 0 = nolz (shiftL i'  4)  (n +  4)
               | shiftR i' 30 == 0 = nolz (shiftL i'  2)  (n +  2)
               | otherwise = n - shiftR i' 31
+
+rmod :: Int64 -> Int64 -> Int
+rmod a b = fromIntegral $ a .&. b
