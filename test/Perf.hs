@@ -14,7 +14,7 @@ size :: Int
 size = 1024*32
 
 iterations :: Int
-iterations = 500000000
+iterations = 3000000
 
 main :: IO ()
 main = do

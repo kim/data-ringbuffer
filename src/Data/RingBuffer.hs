@@ -16,34 +16,31 @@ import Control.Monad
 import Data.Bits
 import Data.IORef
 
-import Prelude hiding (seq, min)
-
 import qualified Data.Vector.Mutable as V
 
-import Debug.Trace
+-- import Debug.Trace
 
 
 data RingBuffer a = RingBuffer
-  { cursor  :: {-# UNPACK #-} !(IORef Int)
-  , entries :: {-# UNPACK #-} !(V.IOVector a)
-  }
+     {-# UNPACK #-} !(IORef Int)     -- ^ cursor
+     {-# UNPACK #-} !(V.IOVector a)  -- ^ entries
+                    Int              -- ^ ring mod mask (size - 1)
+
 
 data Consumer a = Consumer
-  { consumeFn :: a -> IO ()
-  , consumerSequence :: {-# UNPACK #-} !(IORef Int)
-  }
+                  (a -> IO ())  -- ^ consuming function
+   {-# UNPACK #-} !(IORef Int)  -- ^ consumer sequence
 
 data ProducerBarrier a = ProducerBarrier
-  { consumers :: [Consumer a]
-  , producerSequence :: {-# UNPACK #-} !(IORef Int)
-  }
+                         [Consumer a]     -- ^ consumers to track
+          {-# UNPACK #-} !(IORef Int)     -- ^ producer sequence
 
 
 newRingBuffer :: Int -> a -> IO (RingBuffer a)
 newRingBuffer size e = do
   c  <- newIORef (-1)
   es <- V.replicate (ceilNextPowerOfTwo size) e
-  return $ RingBuffer c es
+  return $ RingBuffer c es (V.length es - 1)
 {-# INLINE newRingBuffer #-}
 
 newConsumer :: (a -> IO ()) -> IO (Consumer a)
@@ -59,38 +56,32 @@ newProducerBarrier cs = do
 {-# INLINE newProducerBarrier #-}
 
 push :: RingBuffer a -> ProducerBarrier a -> a -> IO ()
-push b p v = do
-  let s = producerSequence p
-  i <- atomicModifyIORef s (\old -> (old + 1, old + 1))
+push (RingBuffer cursor entries m)
+     (ProducerBarrier consumers pseq)
+     v = do
+  i <- atomicModifyIORef pseq (\old -> (old + 1, old + 1))
   {-# SCC "in_range" #-} ensureConsumersAreInRange i
-  V.write (entries b) (i .&. ringModMask b) v
-  writeIORef (cursor b) i
+  V.write entries (i .&. m) v
+  writeIORef cursor i
   where
     ensureConsumersAreInRange i = do
-      xs <- mapM (readIORef . consumerSequence) (consumers p)
-      let min  = minimum xs
-          wrap = i - (V.length . entries $ b)
-      unless (wrap <= min) $ yield >> ensureConsumersAreInRange i
+      xs <- mapM (\(Consumer _ s) -> readIORef s) consumers
+      let mins = minimum xs
+          wrap = i - V.length entries
+      unless (wrap <= mins) $ yield >> ensureConsumersAreInRange i
 
 consume :: RingBuffer a -> [Consumer a] -> IO ()
 consume _ [] = return ()
-consume buf (c:cs) = do
-  let cseq = consumerSequence c
-      es   = entries buf
-      m    = ringModMask buf
+consume b@(RingBuffer cursor entries m) (Consumer f cseq : cs) = do
   cseq' <- readIORef cseq
   avail <- {-# SCC "wait_for" #-} waitFor cseq'
-  batch <- {-# SCC "slice_batch" #-} mapM (\x -> V.read es (x .&. m)) [(cseq' + 1)..avail]
-  mapM_ (consumeFn c) batch
+  batch <- {-# SCC "slice_batch" #-} mapM (\x -> V.read entries (x .&. m)) [(cseq' + 1)..avail]
+  mapM_ f batch
   writeIORef cseq avail
-  consume buf cs
+  consume b cs
   where
-    waitFor :: Int -> IO Int
-    waitFor seq = do
-      avail <- readIORef . cursor $ buf
-      if seq < avail
-        then return avail
-        else yield >> waitFor seq
+    waitFor i = readIORef cursor >>= \avail ->
+                if i < avail then return avail else yield >> waitFor i
 
 ceilNextPowerOfTwo :: Int -> Int
 ceilNextPowerOfTwo i = shiftL 1 (32 - numberOfLeadingZeros (i - 1))
@@ -100,10 +91,7 @@ numberOfLeadingZeros i = nolz i 1
   where
     nolz 0 _ = 32
     nolz i' n | shiftR i' 16 == 0 = nolz (shiftL i' 16) (n + 16)
-              | shiftR i' 24 == 0 = nolz (shiftL i' 8)  (n +  8)
-              | shiftR i' 28 == 0 = nolz (shiftL i' 4)  (n +  4)
-              | shiftR i' 30 == 0 = nolz (shiftL i' 2)  (n +  2)
-              | otherwise = n - (shiftR i' 31)
-
-ringModMask :: RingBuffer a -> Int
-ringModMask b = (V.length . entries $ b) - 1
+              | shiftR i' 24 == 0 = nolz (shiftL i'  8)  (n +  8)
+              | shiftR i' 28 == 0 = nolz (shiftL i'  4)  (n +  4)
+              | shiftR i' 30 == 0 = nolz (shiftL i'  2)  (n +  2)
+              | otherwise = n - shiftR i' 31
