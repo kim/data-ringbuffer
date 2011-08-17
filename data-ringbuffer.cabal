@@ -14,7 +14,7 @@ Cabal-version:       >=1.8
 
 Library
   Exposed-modules: Data.RingBuffer
-  Build-depends:   base >= 3, transformers, vector
+  Build-depends:   base >= 3, transformers, vector, deepseq
   Other-modules:
   ghc-options:     -Wall -O2 -threaded -auto-all
   hs-source-dirs:  src
@@ -22,6 +22,6 @@ Library
 Test-Suite perf
   type:            exitcode-stdio-1.0
   main-is:         Perf.hs
-  build-depends:   base >= 3, data-ringbuffer
+  build-depends:   base >= 3, data-ringbuffer, deepseq
   ghc-options:     -Wall -O2 -threaded -rtsopts -prof
   hs-source-dirs:  test

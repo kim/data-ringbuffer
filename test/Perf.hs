@@ -2,6 +2,7 @@
 module Main where
 
 import Control.Concurrent
+import Control.DeepSeq
 import Control.Exception
 import Control.Monad
 import Data.RingBuffer
@@ -13,11 +14,11 @@ size :: Int
 size = 1024*32
 
 iterations :: Int
-iterations = 3000000
+iterations = 500000000
 
 main :: IO ()
 main = do
-  consumer <- newConsumer (\x -> print x)
+  consumer <- newConsumer (return . rnf)
   barrier  <- newProducerBarrier [consumer]
   buf      <- newRingBuffer size 0
   done     <- newEmptyMVar
