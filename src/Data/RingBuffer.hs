@@ -11,12 +11,14 @@ module Data.RingBuffer
   , consume
   ) where
 
+import Control.Applicative
 import Control.Concurrent
 import Control.Monad
 import Data.Bits
 import Data.Int
 import Data.IORef
 
+import qualified Data.Vector as VG
 import qualified Data.Vector.Mutable as V
 
 -- import Debug.Trace
@@ -61,35 +63,38 @@ newProducerBarrier cs = do
 
 push :: RingBuffer a -> ProducerBarrier a -> a -> IO ()
 push (RingBuffer cursor entries l m)
-     (ProducerBarrier consumers pseq)
-     v = do
-  i <- atomicModifyIORef pseq (\old -> (old + 1, old + 1))
-  {-# SCC "in_range" #-} ensureConsumersAreInRange i
+     (ProducerBarrier consumers pseq) v = do
+  i <- incrementAndGet pseq
+  {-# SCC "inrange" #-} consumersInRange i
   V.write entries (rmod i m) v
   writeIORef cursor i
   where
-    ensureConsumersAreInRange i = do
-      xs <- mapM (\(Consumer _ s) -> readIORef s) consumers
-      let mins = fromIntegral . minimum $ xs
-          wrap = i - l
-      unless (wrap <= mins) $ yield >> ensureConsumersAreInRange i
+    consumersInRange i = minConsumerSeq >>= \mins ->
+                         unless (i - l <= mins) $
+                           yield >> consumersInRange i
+
+    minConsumerSeq     = fromIntegral . minimum <$>
+                           mapM (\(Consumer _ s) -> readIORef s) consumers
 
 consume :: RingBuffer a -> [Consumer a] -> IO ()
 consume _ [] = return ()
 consume b@(RingBuffer cursor entries _ m) (Consumer f cseq : cs) = do
   cseq' <- readIORef cseq
-  avail <- {-# SCC "wait_for" #-} waitFor cseq'
-  batch <- {-# SCC "slice_batch" #-}
-           mapM (\x -> V.read entries (rmod x m)) [(cseq' + 1)..avail]
-  mapM_ f batch
+  avail <- {-# SCC "waitfor" #-} waitFor cseq'
+  _     <- {-# SCC "mapconsume" #-} VG.mapM_ f <$>
+           {-# SCC "slice" #-} unsafeSlice entries m cseq' avail
   writeIORef cseq avail
   consume b cs
   where
     waitFor i = readIORef cursor >>= \avail ->
                 if i < avail then return avail else yield >> waitFor i
 
+
+-- | Utilities
+
 ceilNextPowerOfTwo :: Int -> Int
 ceilNextPowerOfTwo i = shiftL 1 (32 - numberOfLeadingZeros (i - 1))
+{-# INLINE ceilNextPowerOfTwo #-}
 
 numberOfLeadingZeros :: Int -> Int
 numberOfLeadingZeros i = nolz i 1
@@ -100,6 +105,19 @@ numberOfLeadingZeros i = nolz i 1
               | shiftR i' 28 == 0 = nolz (shiftL i'  4)  (n +  4)
               | shiftR i' 30 == 0 = nolz (shiftL i'  2)  (n +  2)
               | otherwise = n - shiftR i' 31
+{-# INLINE numberOfLeadingZeros #-}
 
 rmod :: Int64 -> Int64 -> Int
-rmod a b = fromIntegral $ a .&. b
+rmod a b = {-# SCC "rmod" #-} fromIntegral $ a .&. b
+{-# INLINE rmod #-}
+
+incrementAndGet :: IORef Int64 -> IO Int64
+incrementAndGet i = atomicModifyIORef i (\x -> (x + 1, x + 1))
+{-# INLINE incrementAndGet #-}
+
+unsafeSlice :: V.IOVector a -> Int64 -> Int64 -> Int64 -> IO (VG.Vector a)
+unsafeSlice v m a b = do
+  let start = rmod (a + 1) m
+      len   = (rmod b m) - start
+  VG.unsafeFreeze $ V.unsafeSlice start len v
+{-# INLINE unsafeSlice #-}

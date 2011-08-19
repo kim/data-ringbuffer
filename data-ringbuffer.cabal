@@ -23,5 +23,5 @@ Test-Suite perf
   type:            exitcode-stdio-1.0
   main-is:         Perf.hs
   build-depends:   base >= 3, data-ringbuffer, deepseq
-  ghc-options:     -Wall -O2 -threaded -rtsopts -prof
+  ghc-options:     -Wall -O2 -threaded -rtsopts -prof -fno-warn-unused-do-bind
   hs-source-dirs:  test
