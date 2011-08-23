@@ -11,10 +11,10 @@ import Data.IORef
 
 
 size :: Int
-size = 1024*64
+size = 1024*8
 
 iterations :: Int64
-iterations = 50000000
+iterations = 300000000
 
 main :: IO ()
 main = do
