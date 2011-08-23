@@ -21,19 +21,20 @@ import Data.IORef
 import qualified Data.Vector as VG
 import qualified Data.Vector.Mutable as V
 
--- import Debug.Trace
 
+data RingBuffer a = RingBuffer
+     {-# UNPACK #-} !(IORef Int64)   -- ^ cursor
+     {-# UNPACK #-} !(V.IOVector a)  -- ^ entries
+                    Int64            -- ^ size
+                    Int64            -- ^ ring mod mask (size - 1)
 
-data RingBuffer a = RingBuffer {-# UNPACK #-} !(IORef Int64)   -- ^ cursor
-                               {-# UNPACK #-} !(V.IOVector a)  -- ^ entries
-                                              Int64            -- ^ size
-                                              Int64            -- ^ ring mod mask (size - 1)
+data Consumer a = Consumer
+                  (a -> IO ())    -- ^ consuming function
+   {-# UNPACK #-} !(IORef Int64)  -- ^ consumer sequence
 
-data Consumer a = Consumer (a -> IO ())    -- ^ consuming function
-            {-# UNPACK #-} !(IORef Int64)  -- ^ consumer sequence
-
-data ProducerBarrier a = ProducerBarrier [Consumer a]    -- ^ consumers to track
-                          {-# UNPACK #-} !(IORef Int64)  -- ^ producer sequence
+data ProducerBarrier a = ProducerBarrier
+                         [Consumer a]    -- ^ consumers to track
+          {-# UNPACK #-} !(IORef Int64)  -- ^ producer sequence
 
 
 newRingBuffer :: Int -> a -> IO (RingBuffer a)
