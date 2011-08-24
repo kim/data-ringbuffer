@@ -1,14 +1,15 @@
 {-# LANGUAGE BangPatterns #-}
 
 module Data.RingBuffer
-  ( RingBuffer(..)
-  , Consumer(..)
+  ( RingBuffer
+  , Consumer
   , ProducerBarrier
   , newRingBuffer
   , newConsumer
   , newProducerBarrier
   , push
   , consume
+  , consumerSequence
   ) where
 
 import Control.Applicative
@@ -86,6 +87,9 @@ consume b@(RingBuffer cursor entries _ m) (Consumer f cseq : cs) = do
     waitFor i = readIORef cursor >>= \avail ->
                 if i < avail then return avail else yield >> waitFor i
 
+consumerSequence :: Consumer a -> IO Int64
+consumerSequence (Consumer _ s) = readIORef s
+{-# INLINE consumerSequence #-}
 
 -- | Utilities
 
@@ -98,9 +102,9 @@ numberOfLeadingZeros i = nolz i 1
   where
     nolz 0 _ = 32
     nolz i' n | shiftR i' 16 == 0 = nolz (shiftL i' 16) (n + 16)
-              | shiftR i' 24 == 0 = nolz (shiftL i'  8)  (n +  8)
-              | shiftR i' 28 == 0 = nolz (shiftL i'  4)  (n +  4)
-              | shiftR i' 30 == 0 = nolz (shiftL i'  2)  (n +  2)
+              | shiftR i' 24 == 0 = nolz (shiftL i'  8) (n +  8)
+              | shiftR i' 28 == 0 = nolz (shiftL i'  4) (n +  4)
+              | shiftR i' 30 == 0 = nolz (shiftL i'  2) (n +  2)
               | otherwise = n - shiftR i' 31
 {-# INLINE numberOfLeadingZeros #-}
 
@@ -109,12 +113,14 @@ rmod a b = {-# SCC "rmod" #-} fromIntegral $ a .&. b
 {-# INLINE rmod #-}
 
 incrementAndGet :: IORef Int64 -> IO Int64
-incrementAndGet i = atomicModifyIORef i (\x -> (x + 1, x + 1))
+incrementAndGet = flip atomicModifyIORef $ pair . (+1)
+  where
+    pair x = (x, x)
 {-# INLINE incrementAndGet #-}
 
 unsafeSlice :: V.IOVector a -> Int64 -> Int64 -> Int64 -> IO (VG.Vector a)
 unsafeSlice v m a b = do
   let start = rmod (a + 1) m
-      len   = (rmod b m) - start
+      len   = rmod b m - start
   VG.unsafeFreeze $ V.unsafeSlice start len v
 {-# INLINE unsafeSlice #-}

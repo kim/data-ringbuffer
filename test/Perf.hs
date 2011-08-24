@@ -7,7 +7,6 @@ import Control.Exception
 import Control.Monad
 import Data.RingBuffer
 import Data.Int
-import Data.IORef
 
 
 size :: Int
@@ -31,7 +30,7 @@ main = do
     produce b barr i =
       unless (i > iterations) $ push b barr i >> produce b barr (i + 1)
 
-    consume' b c@(Consumer _ cs) = do
+    consume' b c = do
       consume b [c]
-      i <- readIORef cs
+      i <- consumerSequence c
       unless (i >= iterations) $ consume' b c
