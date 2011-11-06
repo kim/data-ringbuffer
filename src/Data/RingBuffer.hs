@@ -8,6 +8,7 @@ module Data.RingBuffer
   , newConsumer
   , newProducerBarrier
   , push
+  , pushAll
   , consume
   , consumerSequence
   ) where
@@ -60,38 +61,57 @@ newProducerBarrier cs = do
 {-# INLINE newProducerBarrier #-}
 
 push :: RingBuffer a -> ProducerBarrier a -> a -> IO ()
-push (RingBuffer cursor entries l m)
-     (ProducerBarrier consumers pseq) v = do
-  i <- incrementAndGet pseq
-  {-# SCC "inrange" #-} consumersInRange i
-  V.unsafeWrite entries (rmod i m) v
-  writeIORef cursor i
+push b pb v = claim b pb 1 >>= \i -> unsafePush b i v
+
+pushAll :: RingBuffer a -> ProducerBarrier a -> [a] -> IO ()
+pushAll b pb vs = claim b pb l >>= \i -> mapM_ unsafePush' $ s i
   where
-    consumersInRange i = minConsumerSeq >>= \mins ->
-                         unless (i - l <= mins) $
-                           yield >> consumersInRange i
+    l = fromIntegral . length $ vs
+    s i = zip vs [(i-l)..i]
+    unsafePush' (v, i) = unsafePush b i v
 
-    minConsumerSeq     = fromIntegral . minimum <$>
-                           mapM (\(Consumer _ s) -> readIORef s) consumers
-
-consume :: RingBuffer a -> [Consumer a] -> IO ()
-consume _ [] = return ()
-consume b@(RingBuffer cursor entries _ m) (Consumer f cseq : cs) = do
+consume :: RingBuffer a -> Consumer a -> IO ()
+consume b@(RingBuffer _ entries _ m) (Consumer f cseq) = do
   cseq' <- readIORef cseq
-  avail <- {-# SCC "waitfor" #-} waitFor cseq'
-  _     <- {-# SCC "mapconsume" #-} VG.mapM_ f <$>
-           {-# SCC "slice" #-} unsafeSlice entries m cseq' avail
+  avail <- waitFor b cseq'
+  _     <- VG.mapM_ f <$> unsafeSlice entries m cseq' avail
   writeIORef cseq avail
-  consume b cs
-  where
-    waitFor i = readIORef cursor >>= \avail ->
-                if i < avail then return avail else yield >> waitFor i
 
 consumerSequence :: Consumer a -> IO Int64
 consumerSequence (Consumer _ s) = readIORef s
 {-# INLINE consumerSequence #-}
 
 -- | Utilities
+
+unsafePush :: RingBuffer a -> Int64 -> a -> IO ()
+unsafePush (RingBuffer cursor entries _ m) i v = do
+  V.unsafeWrite entries (rmod i m) v
+  writeIORef cursor i
+{-# INLINE unsafePush #-}
+
+claim :: RingBuffer a -> ProducerBarrier a -> Int64 -> IO Int64
+claim (RingBuffer _ _ l _) (ProducerBarrier consumers pseq) s = do
+  i <- incrementAndGet pseq s
+  ensureConsumersAreInRange consumers l i
+  return i
+{-# INLINE claim #-}
+
+ensureConsumersAreInRange :: [Consumer a] -> Int64 -> Int64 -> IO ()
+ensureConsumersAreInRange consumers l i = do
+  mins <- minConsumerSeq consumers
+  unless (i - l <= mins) $ yield >> ensureConsumersAreInRange consumers l i
+{-# INLINE ensureConsumersAreInRange #-}
+
+minConsumerSeq :: [Consumer a] -> IO Int64
+minConsumerSeq cs = fromIntegral . minimum <$>
+                    mapM (\(Consumer _ s) -> readIORef s) cs
+{-# INLINE minConsumerSeq #-}
+
+waitFor :: RingBuffer a -> Int64 -> IO Int64
+waitFor b@(RingBuffer cursor _ _ _) i = do
+  cursor' <- readIORef cursor
+  if i < cursor' then return cursor' else yield >> waitFor b i
+{-# INLINE waitFor #-}
 
 ceilNextPowerOfTwo :: Int -> Int
 ceilNextPowerOfTwo i = shiftL 1 (32 - numberOfLeadingZeros (i - 1))
@@ -112,8 +132,8 @@ rmod :: Int64 -> Int64 -> Int
 rmod a b = {-# SCC "rmod" #-} fromIntegral $ a .&. b
 {-# INLINE rmod #-}
 
-incrementAndGet :: IORef Int64 -> IO Int64
-incrementAndGet = flip atomicModifyIORef $ pair . (+1)
+incrementAndGet :: IORef Int64 -> Int64 -> IO Int64
+incrementAndGet ioref delta = atomicModifyIORef ioref $ pair . (+delta)
   where
     pair x = (x, x)
 {-# INLINE incrementAndGet #-}

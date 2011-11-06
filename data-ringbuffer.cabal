@@ -16,12 +16,12 @@ Library
   Exposed-modules: Data.RingBuffer
   Build-depends:   base >= 3, transformers, vector, deepseq
   Other-modules:
-  ghc-options:     -Wall -O2 -threaded -auto-all
+  ghc-options:     -Wall -O2 -threaded -auto-all -fllvm
   hs-source-dirs:  src
 
 Test-Suite perf
   type:            exitcode-stdio-1.0
   main-is:         Perf.hs
-  build-depends:   base >= 3, data-ringbuffer, deepseq
-  ghc-options:     -Wall -O2 -threaded -rtsopts -fno-warn-unused-do-bind
+  build-depends:   base >= 3, data-ringbuffer, deepseq, time
+  ghc-options:     -Wall -O2 -threaded -rtsopts -fno-warn-unused-do-bind -fllvm
   hs-source-dirs:  test
