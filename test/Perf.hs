@@ -15,7 +15,8 @@ size :: Int
 size = 1024*8
 
 iterations :: Int64
-iterations = 300000000
+--iterations = 300000000
+iterations = 3000000
 
 main :: IO ()
 main = mapM_ run [ ("unicast1P1C", unicast1P1C)
