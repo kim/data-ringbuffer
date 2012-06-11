@@ -8,14 +8,17 @@ import           Control.Concurrent   ( MVar
                                       , forkIO
                                       )
 import           Control.DeepSeq      (rnf)
+import           Criterion            (bench)
+import           Criterion.Main       (defaultMain)
 import           Data.Bits
+import           Data.Int
 import           Data.RingBuffer
 import qualified Data.Vector.Mutable  as V
 import Util
 
 
-main :: IO ()
-main = do
+run :: Int64 -> IO ()
+run iterations = do
     con   <- newConsumer (return . rnf)
     seqr  <- newSequencer [con]
     vals  <- V.replicate (fromIntegral bufferSize) 0
@@ -45,5 +48,10 @@ main = do
                 then putMVar lock ()
                 else consumeAll vec modm barr con lock
 
+main :: IO ()
+main = defaultMain [ bench "unicast 3000"    $ run 3000
+                   , bench "unicast 30000"   $ run 30000
+                   , bench "unicast 3000000" $ run 3000000
+                   ]
 
 -- vim: set ts=4 sw=4 et:

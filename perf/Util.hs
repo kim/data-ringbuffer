@@ -1,15 +1,11 @@
 module Util
-  ( iterations
-  , printTiming
+  ( printTiming
   , now
   ) where
 
 import Data.Int
 import Data.Time.Clock.POSIX (getPOSIXTime)
 
-
-iterations :: Int64
-iterations = 3000000
 
 now :: IO Double
 now = realToFrac `fmap` getPOSIXTime

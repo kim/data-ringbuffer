@@ -8,14 +8,17 @@ import           Control.Concurrent   ( MVar
                                       )
 import           Control.DeepSeq      (rnf)
 import           Control.Monad        (replicateM)
+import           Criterion            (bench)
+import           Criterion.Main       (defaultMain)
 import           Data.Bits
+import           Data.Int
 import           Data.RingBuffer
 import qualified Data.Vector.Mutable  as V
 import Util
 
 
-main :: IO ()
-main = do
+run :: Int64 -> IO ()
+run iterations = do
     cons  <- replicateM 3 $ newConsumer (return . rnf)
     seqr  <- newSequencer cons
     vals  <- V.replicate (fromIntegral bufferSize) 0
@@ -49,3 +52,11 @@ main = do
             if consumed == iterations
                 then putMVar lock ()
                 else consumeAll vec modm barr con lock
+
+main :: IO ()
+main = defaultMain [ bench "multicast 3000"    $ run 3000
+                   , bench "multicast 30000"   $ run 30000
+                   , bench "multicast 3000000" $ run 3000000
+                   ]
+
+-- vim: set ts=4 sw=4 et:

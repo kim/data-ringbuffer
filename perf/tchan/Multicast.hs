@@ -4,11 +4,14 @@ import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Exception        (finally)
 import Control.Monad            (replicateM, unless)
+import Data.Int
+import Criterion                (bench)
+import Criterion.Main           (defaultMain)
 import Util
 
 
-main :: IO ()
-main = do
+run :: Int64 -> IO ()
+run iterations = do
     chans <- replicateM 3 newTChanIO
     dones <- replicateM 3 newEmptyMVar
     start <- now
@@ -30,5 +33,10 @@ main = do
         forkChild chan lck = forkIO $
             consumeTChan chan 0 `finally` putMVar lck ()
 
+main :: IO ()
+main = defaultMain [ bench "multicast 3000"    $ run 3000
+                   , bench "multicast 30000"   $ run 30000
+                   , bench "multicast 3000000" $ run 3000000
+                   ]
 
 -- vim: set ts=4 sw=4 et:
