@@ -1,146 +1,222 @@
-{-# LANGUAGE BangPatterns #-}
-
 module Data.RingBuffer
-  ( RingBuffer
-  , Consumer
-  , ProducerBarrier
-  , newRingBuffer
-  , newConsumer
-  , newProducerBarrier
-  , push
-  , pushAll
-  , consume
-  , consumerSequence
-  ) where
+    ( -- * Types
+      Barrier
+    , Consumer
+    , Sequence
+    , Sequencer
 
-import Control.Applicative
-import Control.Concurrent
-import Control.Monad
-import Data.Bits
-import Data.Int
-import Data.IORef
+    -- * Classes
+    , Buffer(..)
+    , MVector(..)
 
-import qualified Data.Vector as VG
-import qualified Data.Vector.Mutable as V
+    -- * Value Constructors
+    , newSequencer
+    , newConsumer
+    , newBarrier
+
+    -- * Concurrent Access, aka Disruptor API
+    , claim
+    , nextSeq
+    , waitFor
+    , publish
+
+    -- * Util
+    , consumerSeq
+    )
+where
+
+import           Control.Applicative  ((<$>), (*>))
+import           Control.Concurrent   (yield)
+import           Control.Monad        (unless)
+import           Data.Bits
+import           Data.CAS
+import           Data.Int
+import           Data.IORef
+import qualified Data.Vector          as V
+import qualified Data.Vector.Mutable  as MV
 
 
-data RingBuffer a = RingBuffer
-     {-# UNPACK #-} !(IORef Int64)   -- ^ cursor
-     {-# UNPACK #-} !(V.IOVector a)  -- ^ entries
-                    Int64            -- ^ size
-                    Int64            -- ^ ring mod mask (size - 1)
+data Sequence   = Sequence {-# UNPACK #-} !Int64
+                           {-# UNPACK #-} !Int64
+                           {-# UNPACK #-} !Int64
+                           {-# UNPACK #-} !Int64
+                           {-# UNPACK #-} !Int64
+                           {-# UNPACK #-} !Int64
+                           {-# UNPACK #-} !Int64
+                           !(IORef Int64)
+                           {-# UNPACK #-} !Int64
+                           {-# UNPACK #-} !Int64
+                           {-# UNPACK #-} !Int64
+                           {-# UNPACK #-} !Int64
+                           {-# UNPACK #-} !Int64
+                           {-# UNPACK #-} !Int64
+                           {-# UNPACK #-} !Int64
 
-data Consumer a = Consumer
-                  (a -> IO ())    -- ^ consuming function
-   {-# UNPACK #-} !(IORef Int64)  -- ^ consumer sequence
 
-data ProducerBarrier a = ProducerBarrier
-                         [Consumer a]    -- ^ consumers to track
-          {-# UNPACK #-} !(IORef Int64)  -- ^ producer sequence
+data Sequencer  = Sequencer !Sequence
+                            -- ^ cursor
+                            ![Sequence]
+                            -- ^ gating (aka consumer) sequences
+
+data Barrier    = Barrier !Sequence
+                          -- ^ cursor (must point to the same sequence as
+                          -- the corresponding 'Sequencer')
+                          ![Sequence]
+                          -- ^ dependent sequences (optional)
+
+data Consumer a = Consumer (a -> IO ())
+                           -- ^ consuming function
+                           {-# UNPACK #-} !Sequence
+                           -- ^ consumer sequence
+
+class Buffer a where
+    consumeFrom :: a b
+                -> Int64 -- ^ mod mask
+                -> Barrier
+                -> Consumer b
+                -> IO ()
+
+instance Buffer V.Vector where
+    consumeFrom vec modm barr (Consumer fn sq) = do
+        next  <- addAndGet' sq 1
+        avail <- waitFor barr next
+
+        let start = fromIntegral $ next .&. modm
+            len   = fromIntegral $ avail - next
+            (_,h) = V.splitAt start vec
+
+        V.mapM_ fn h
+        unless (V.length h >= len) $
+            V.mapM_ fn (V.take (len - V.length h) vec)
+
+        writeSeq sq avail
+
+newtype MVector a = MVector { unMVector :: MV.IOVector a }
+instance Buffer MVector where
+    consumeFrom (MVector mvec) modm barr con = do
+        vec <- V.unsafeFreeze mvec
+        consumeFrom vec modm barr con
 
 
-newRingBuffer :: Int -> a -> IO (RingBuffer a)
-newRingBuffer size e = do
-  c  <- newIORef (-1)
-  es <- V.replicate (ceilNextPowerOfTwo size) e
-  let s = fromIntegral . V.length $ es
-      m = s - 1
-  return $ RingBuffer c es s m
-{-# INLINE newRingBuffer #-}
+--
+-- Value Constructors
+--
+
+newSequencer :: [Consumer a] -> IO Sequencer
+newSequencer conss = do
+    curs <- mkSeq
+
+    return $ Sequencer curs (map gate conss)
+
+    where
+        gate (Consumer _ sq) = sq
+
+newBarrier :: Sequencer -> [Sequence] -> Barrier
+newBarrier (Sequencer curs _) = Barrier curs
 
 newConsumer :: (a -> IO ()) -> IO (Consumer a)
 newConsumer fn = do
-  s <- newIORef (-1)
-  return $ Consumer fn s
-{-# INLINE newConsumer #-}
+    sq <- mkSeq
 
-newProducerBarrier :: [Consumer a] -> IO (ProducerBarrier a)
-newProducerBarrier cs = do
-  s <- newIORef (-1)
-  return $ ProducerBarrier cs s
-{-# INLINE newProducerBarrier #-}
+    return $ Consumer fn sq
 
-push :: RingBuffer a -> ProducerBarrier a -> a -> IO ()
-push b pb v = claim b pb 1 >>= \i -> unsafePush b i v
+--
+-- Disruptor API
+--
 
-pushAll :: RingBuffer a -> ProducerBarrier a -> [a] -> IO ()
-pushAll b pb vs = claim b pb l >>= \i -> mapM_ unsafePush' $ s i
-  where
-    l = fromIntegral . length $ vs
-    s i = zip vs [(i-l)..i]
-    unsafePush' (v, i) = unsafePush b i v
+-- | Claim the given sequence value for publishing
+claim :: Sequencer
+      -> Int64      -- ^ sequence value to claim
+      -> Int64      -- ^ buffer size
+      -> IO Int64
+claim (Sequencer _ gates) sq bufsize = await gates sq bufsize
 
-consume :: RingBuffer a -> Consumer a -> IO ()
-consume b@(RingBuffer _ entries _ m) (Consumer f cseq) = do
-  cseq' <- readIORef cseq
-  avail <- waitFor b cseq'
-  _     <- VG.mapM_ f <$> unsafeSlice entries m cseq' avail
-  writeIORef cseq avail
+-- | Claim the next available sequence for publishing
+nextSeq :: Sequencer
+        -> Sequence  -- ^ sequence to increment for next sequence value
+        -> Int64     -- ^ buffer size
+        -> IO Int64
+nextSeq (Sequencer _ gates) sq bufsize = do
+    --curr <- readIORef ref
+    --await (curr + 1)
 
-consumerSequence :: Consumer a -> IO Int64
-consumerSequence (Consumer _ s) = readIORef s
-{-# INLINE consumerSequence #-}
+    next <- addAndGet' sq 1
+    await gates next bufsize
 
--- | Utilities
+-- | Wait for the given sequence value to be available for consumption
+waitFor :: Barrier -> Int64 -> IO Int64
+waitFor b@(Barrier sq deps) i = do
+    avail <- if null deps then readSeq sq else minSeq deps
 
-unsafePush :: RingBuffer a -> Int64 -> a -> IO ()
-unsafePush (RingBuffer cursor entries _ m) i v = do
-  V.unsafeWrite entries (rmod i m) v
-  writeIORef cursor i
-{-# INLINE unsafePush #-}
+    if avail >= i
+        then return avail
+        else yield *> waitFor b i
 
-claim :: RingBuffer a -> ProducerBarrier a -> Int64 -> IO Int64
-claim (RingBuffer _ _ l _) (ProducerBarrier consumers pseq) s = do
-  i <- incrementAndGet pseq s
-  ensureConsumersAreInRange consumers l i
-  return i
-{-# INLINE claim #-}
+-- | Make the given sequence visible to consumers
+publish :: Sequencer -> Int64 -> IO ()
+publish s@(Sequencer sq _) i = do
+    let expected = i - 1 -- maybe support batch sizes instead of constant 1?
+    curr <- readSeq sq
 
-ensureConsumersAreInRange :: [Consumer a] -> Int64 -> Int64 -> IO ()
-ensureConsumersAreInRange consumers l i = do
-  mins <- minConsumerSeq consumers
-  unless (i - l <= mins) $ yield >> ensureConsumersAreInRange consumers l i
-{-# INLINE ensureConsumersAreInRange #-}
+    if expected == curr
+        then writeSeq sq i
+        else publish s i
 
-minConsumerSeq :: [Consumer a] -> IO Int64
-minConsumerSeq cs = fromIntegral . minimum <$>
-                    mapM (\(Consumer _ s) -> readIORef s) cs
-{-# INLINE minConsumerSeq #-}
 
-waitFor :: RingBuffer a -> Int64 -> IO Int64
-waitFor b@(RingBuffer cursor _ _ _) i = do
-  cursor' <- readIORef cursor
-  if i < cursor' then return cursor' else yield >> waitFor b i
-{-# INLINE waitFor #-}
+--
+-- Util
+--
 
-ceilNextPowerOfTwo :: Int -> Int
-ceilNextPowerOfTwo i = shiftL 1 (32 - numberOfLeadingZeros (i - 1))
-{-# INLINE ceilNextPowerOfTwo #-}
+consumerSeq :: Consumer a -> IO Int64
+consumerSeq (Consumer _ sq) = readSeq sq
+{-# INLINE consumerSeq #-}
 
-numberOfLeadingZeros :: Int -> Int
-numberOfLeadingZeros i = nolz i 1
-  where
-    nolz 0 _ = 32
-    nolz i' n | shiftR i' 16 == 0 = nolz (shiftL i' 16) (n + 16)
-              | shiftR i' 24 == 0 = nolz (shiftL i'  8) (n +  8)
-              | shiftR i' 28 == 0 = nolz (shiftL i'  4) (n +  4)
-              | shiftR i' 30 == 0 = nolz (shiftL i'  2) (n +  2)
-              | otherwise = n - shiftR i' 31
-{-# INLINE numberOfLeadingZeros #-}
 
-rmod :: Int64 -> Int64 -> Int
-rmod a b = {-# SCC "rmod" #-} fromIntegral $ a .&. b
-{-# INLINE rmod #-}
+--
+-- Internal
+--
 
-incrementAndGet :: IORef Int64 -> Int64 -> IO Int64
-incrementAndGet ioref delta = atomicModifyIORef ioref $ pair . (+delta)
-  where
-    pair x = (x, x)
-{-# INLINE incrementAndGet #-}
+minSeq :: [Sequence] -> IO Int64
+minSeq ss = fromIntegral . minimum <$> mapM get ss
 
-unsafeSlice :: V.IOVector a -> Int64 -> Int64 -> Int64 -> IO (VG.Vector a)
-unsafeSlice v m a b = do
-  let start = rmod (a + 1) m
-      len   = rmod b m - start
-  VG.unsafeFreeze $ V.unsafeSlice start len v
-{-# INLINE unsafeSlice #-}
+    where
+        get = readIORef . unSeq
+{-# INLINE minSeq #-}
+
+await :: [Sequence] -> Int64 -> Int64 -> IO Int64
+await gates n bufsize = do
+    m <- minSeq gates
+    if (n - bufsize <= m) then return n else await gates n bufsize
+{-# INLINE await #-}
+
+addAndGet :: IORef Int64 -> Int64 -> IO Int64
+addAndGet ref delta = atomicModifyIORefCAS ref $ pair . (+delta)
+
+    where
+        pair x = (x, x)
+{-# INLINE addAndGet #-}
+
+addAndGet' :: Sequence -> Int64 -> IO Int64
+addAndGet' = addAndGet . unSeq
+{-# INLINE addAndGet' #-}
+
+mkSeq :: IO Sequence
+mkSeq = do
+    ref <- newIORef (-1)
+    return $ Sequence 7 7 7 7 7 7 7 ref 7 7 7 7 7 7 7
+{-# INLINE mkSeq #-}
+
+unSeq :: Sequence -> IORef Int64
+unSeq (Sequence _ _ _ _ _ _ _ ref _ _ _ _ _ _ _) = ref
+{-# INLINE unSeq #-}
+
+readSeq :: Sequence -> IO Int64
+readSeq = readIORef . unSeq
+{-# INLINE readSeq #-}
+
+writeSeq :: Sequence -> Int64 -> IO ()
+writeSeq = writeIORef . unSeq
+{-# INLINE writeSeq #-}
+
+
+-- vim: set ts=4 sw=4 et:

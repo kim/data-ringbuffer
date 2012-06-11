@@ -1,27 +1,84 @@
-Name:                data-ringbuffer
-Version:             0.1
-Synopsis:            Ringbuffer implementation using Vectors, inspired by the "Disruptor Pattern"
-Homepage:            https://github.com/kim/data-ringbuffer
-License:             OtherLicense
-License-file:        LICENSE
-Author:              Kim Altintop
-Maintainer:          kim.altintop@gmail.com
-Category:            Data, Concurrency
-Build-type:          Simple
-Stability:           Experimental
-Cabal-version:       >=1.8
+name:                data-ringbuffer
+version:             0.2
+synopsis:            Ringbuffer implementation using Vectors, inspired by the "Disruptor Pattern"
+homepage:            https://github.com/kim/data-ringbuffer
+license:             OtherLicense
+license-file:        LICENSE
+author:              Kim Altintop
+maintainer:          kim.altintop@gmail.com
+category:            Data, Concurrency
+build-type:          Simple
+stability:           Experimental
+cabal-version:       >=1.10
+
+extra-source-files:  Readme.md
+
+source-repository head
+  type:     git
+  location: git://github.com/kim/data-ringbuffer.git
+
+library
+  exposed-modules:   Data.RingBuffer
+                   , Data.RingBuffer.Disruptor2
+  build-depends:     base >= 4 && < 5
+                   , transformers
+                   , vector
+                   , IORefCAS
+  default-language:  Haskell2010
+  ghc-options:       -Wall -O2
+                     -fno-warn-unused-do-bind
+  ghc-prof-options:  -fprof-auto
+  hs-source-dirs:    src
 
 
-Library
-  Exposed-modules: Data.RingBuffer
-  Build-depends:   base >= 3, transformers, vector, deepseq
-  Other-modules:
-  ghc-options:     -Wall -O2 -auto-all
-  hs-source-dirs:  src
+benchmark perf-disruptor2-unicast
+  type:              exitcode-stdio-1.0
+  main-is:           Unicast.hs
+  build-depends:     base >= 4 && < 5
+                   , data-ringbuffer
+                   , deepseq
+                   , time
+                   , vector
+  default-language:  Haskell2010
+  ghc-options:       -Wall -O2 -threaded -rtsopts
+                     -fno-warn-unused-do-bind
+  hs-source-dirs:    perf/disruptor2
+                   , perf
 
-Test-Suite perf
-  type:            exitcode-stdio-1.0
-  main-is:         Perf.hs
-  build-depends:   base >= 3, data-ringbuffer, deepseq, time
-  ghc-options:     -Wall -O2 -threaded -rtsopts -fno-warn-unused-do-bind
-  hs-source-dirs:  test
+benchmark perf-disruptor2-multicast
+  type:              exitcode-stdio-1.0
+  main-is:           Multicast.hs
+  build-depends:     base >= 4 && < 5
+                   , data-ringbuffer
+                   , deepseq
+                   , time
+                   , vector
+  default-language:  Haskell2010
+  ghc-options:       -Wall -O2 -threaded -rtsopts
+                     -fno-warn-unused-do-bind
+  hs-source-dirs:    perf/disruptor2
+                   , perf
+
+benchmark perf-tchan-unicast
+  type:              exitcode-stdio-1.0
+  main-is:           Unicast.hs
+  build-depends:     base >= 4 && < 5
+                   , time
+                   , stm
+  default-language:  Haskell2010
+  ghc-options:       -Wall -O2 -threaded -rtsopts
+                     -fno-warn-unused-do-bind
+  hs-source-dirs:    perf/tchan
+                   , perf
+
+benchmark perf-tchan-multicast
+  type:              exitcode-stdio-1.0
+  main-is:           Multicast.hs
+  build-depends:     base >= 4 && < 5
+                   , time
+                   , stm
+  default-language:  Haskell2010
+  ghc-options:       -Wall -O2 -threaded -rtsopts
+                     -fno-warn-unused-do-bind
+  hs-source-dirs:    perf/tchan
+                   , perf
