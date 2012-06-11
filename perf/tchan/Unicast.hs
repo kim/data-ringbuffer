@@ -4,7 +4,6 @@ import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Exception        (finally)
 import Control.Monad            (unless)
-import Data.Int
 
 import Util
 
