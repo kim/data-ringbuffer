@@ -36,33 +36,19 @@ import qualified Data.Vector          as V
 import qualified Data.Vector.Mutable  as MV
 
 
-data Sequence   = Sequence {-# UNPACK #-} !Int64
-                           {-# UNPACK #-} !Int64
-                           {-# UNPACK #-} !Int64
-                           {-# UNPACK #-} !Int64
-                           {-# UNPACK #-} !Int64
-                           {-# UNPACK #-} !Int64
-                           {-# UNPACK #-} !Int64
-                           !(IORef Int64)
-                           {-# UNPACK #-} !Int64
-                           {-# UNPACK #-} !Int64
-                           {-# UNPACK #-} !Int64
-                           {-# UNPACK #-} !Int64
-                           {-# UNPACK #-} !Int64
-                           {-# UNPACK #-} !Int64
-                           {-# UNPACK #-} !Int64
+newtype Sequence = Sequence { unSeq :: IORef Int64 }
 
 
-data Sequencer  = Sequencer {-# UNPACK #-} !Sequence
-                            -- ^ cursor
-                            ![Sequence]
-                            -- ^ gating (aka consumer) sequences
+data Sequencer = Sequencer {-# UNPACK #-} !Sequence
+                           -- ^ cursor
+                           ![Sequence]
+                           -- ^ gating (aka consumer) sequences
 
-data Barrier    = Barrier {-# UNPACK #-} !Sequence
-                          -- ^ cursor (must point to the same sequence as
-                          -- the corresponding 'Sequencer')
-                          ![Sequence]
-                          -- ^ dependent sequences (optional)
+data Barrier = Barrier {-# UNPACK #-} !Sequence
+                       -- ^ cursor (must point to the same sequence as the
+                       -- corresponding 'Sequencer')
+                       ![Sequence]
+                       -- ^ dependent sequences (optional)
 
 data Consumer a = Consumer (a -> IO ())
                            -- ^ consuming function
@@ -202,12 +188,7 @@ addAndGet' = addAndGet . unSeq
 mkSeq :: IO Sequence
 mkSeq = do
     ref <- newIORef (-1)
-    return $! Sequence 7 7 7 7 7 7 7 ref 7 7 7 7 7 7 7
-{-# INLINE mkSeq #-}
-
-unSeq :: Sequence -> IORef Int64
-unSeq (Sequence _ _ _ _ _ _ _ ref _ _ _ _ _ _ _) = ref
-{-# INLINE unSeq #-}
+    return $! Sequence ref
 
 readSeq :: Sequence -> IO Int64
 readSeq = readIORef . unSeq
