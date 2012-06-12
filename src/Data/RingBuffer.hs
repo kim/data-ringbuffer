@@ -6,7 +6,7 @@ module Data.RingBuffer
     , Sequencer
 
     -- * Classes
-    , Buffer(..)
+    , RingBuffer(..)
     , MVector(..)
 
     -- * Value Constructors
@@ -53,12 +53,12 @@ data Sequence   = Sequence {-# UNPACK #-} !Int64
                            {-# UNPACK #-} !Int64
 
 
-data Sequencer  = Sequencer !Sequence
+data Sequencer  = Sequencer {-# UNPACK #-} !Sequence
                             -- ^ cursor
                             ![Sequence]
                             -- ^ gating (aka consumer) sequences
 
-data Barrier    = Barrier !Sequence
+data Barrier    = Barrier {-# UNPACK #-} !Sequence
                           -- ^ cursor (must point to the same sequence as
                           -- the corresponding 'Sequencer')
                           ![Sequence]
@@ -69,14 +69,14 @@ data Consumer a = Consumer (a -> IO ())
                            {-# UNPACK #-} !Sequence
                            -- ^ consumer sequence
 
-class Buffer a where
+class RingBuffer a where
     consumeFrom :: a b
-                -> Int64 -- ^ mod mask
+                -> Int64        -- ^ mod mask
                 -> Barrier
                 -> Consumer b
                 -> IO ()
 
-instance Buffer V.Vector where
+instance RingBuffer V.Vector where
     consumeFrom vec modm barr (Consumer fn sq) = do
         next  <- addAndGet' sq 1
         avail <- waitFor barr next
@@ -93,7 +93,7 @@ instance Buffer V.Vector where
     {-# INLINE consumeFrom #-}
 
 newtype MVector a = MVector { unMVector :: MV.IOVector a }
-instance Buffer MVector where
+instance RingBuffer MVector where
     consumeFrom (MVector mvec) modm barr con = do
         vec <- V.unsafeFreeze mvec
         consumeFrom vec modm barr con
@@ -108,7 +108,7 @@ newSequencer :: [Consumer a] -> IO Sequencer
 newSequencer conss = do
     curs <- mkSeq
 
-    return $ Sequencer curs (map gate conss)
+    return $! Sequencer curs (map gate conss)
 
     where
         gate (Consumer _ sq) = sq
@@ -120,7 +120,7 @@ newConsumer :: (a -> IO ()) -> IO (Consumer a)
 newConsumer fn = do
     sq <- mkSeq
 
-    return $ Consumer fn sq
+    return $! Consumer fn sq
 
 --
 -- Disruptor API
@@ -179,10 +179,7 @@ consumerSeq (Consumer _ sq) = readSeq sq
 --
 
 minSeq :: [Sequence] -> IO Int64
-minSeq ss = fromIntegral . minimum <$> mapM get ss
-
-    where
-        get = readIORef . unSeq
+minSeq ss = fromIntegral . minimum <$> mapM readSeq ss
 {-# INLINE minSeq #-}
 
 await :: [Sequence] -> Int64 -> Int64 -> IO Int64
@@ -192,7 +189,7 @@ await gates n bufsize = do
 {-# INLINE await #-}
 
 addAndGet :: IORef Int64 -> Int64 -> IO Int64
-addAndGet ref delta = atomicModifyIORefCAS ref $ pair . (+delta)
+addAndGet ref delta = atomicModifyIORefCAS ref $! pair . (+delta)
 
     where
         pair x = (x, x)
@@ -205,7 +202,7 @@ addAndGet' = addAndGet . unSeq
 mkSeq :: IO Sequence
 mkSeq = do
     ref <- newIORef (-1)
-    return $ Sequence 7 7 7 7 7 7 7 ref 7 7 7 7 7 7 7
+    return $! Sequence 7 7 7 7 7 7 7 ref 7 7 7 7 7 7 7
 {-# INLINE mkSeq #-}
 
 unSeq :: Sequence -> IORef Int64
