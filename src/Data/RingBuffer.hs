@@ -90,12 +90,14 @@ instance Buffer V.Vector where
             V.mapM_ fn (V.take (len - V.length h) vec)
 
         writeSeq sq avail
+    {-# INLINE consumeFrom #-}
 
 newtype MVector a = MVector { unMVector :: MV.IOVector a }
 instance Buffer MVector where
     consumeFrom (MVector mvec) modm barr con = do
         vec <- V.unsafeFreeze mvec
         consumeFrom vec modm barr con
+    {-# INLINE consumeFrom #-}
 
 
 --
