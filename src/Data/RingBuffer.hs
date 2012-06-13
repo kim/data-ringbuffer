@@ -39,12 +39,12 @@ import qualified Data.Vector.Mutable  as MV
 newtype Sequence = Sequence { unSeq :: IORef Int64 }
 
 
-data Sequencer = Sequencer {-# UNPACK #-} !Sequence
+data Sequencer = Sequencer !Sequence
                            -- ^ cursor
                            ![Sequence]
                            -- ^ gating (aka consumer) sequences
 
-data Barrier = Barrier {-# UNPACK #-} !Sequence
+data Barrier = Barrier !Sequence
                        -- ^ cursor (must point to the same sequence as the
                        -- corresponding 'Sequencer')
                        ![Sequence]
@@ -52,7 +52,7 @@ data Barrier = Barrier {-# UNPACK #-} !Sequence
 
 data Consumer a = Consumer (a -> IO ())
                            -- ^ consuming function
-                           {-# UNPACK #-} !Sequence
+                           !Sequence
                            -- ^ consumer sequence
 
 class RingBuffer a where
