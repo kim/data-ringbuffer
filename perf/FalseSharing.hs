@@ -7,33 +7,32 @@ import Control.Concurrent  ( newEmptyMVar
                            )
 import Criterion           (bench)
 import Criterion.Main      (defaultMain)
-import Data.Int
 import Data.IORef
 import Data.CAS
 
 
-data Struct = Struct !(IORef Int64) !(IORef Int64)
+data Struct = Struct !(IORef Int) !(IORef Int)
 
-data PaddedLong = PaddedLong {-# UNPACK #-} !Int64
-                             {-# UNPACK #-} !Int64
-                             {-# UNPACK #-} !Int64
-                             {-# UNPACK #-} !Int64
-                             {-# UNPACK #-} !Int64
-                             {-# UNPACK #-} !Int64
-                             {-# UNPACK #-} !Int64
-                             !(IORef Int64)
-                             {-# UNPACK #-} !Int64
-                             {-# UNPACK #-} !Int64
-                             {-# UNPACK #-} !Int64
-                             {-# UNPACK #-} !Int64
-                             {-# UNPACK #-} !Int64
-                             {-# UNPACK #-} !Int64
-                             {-# UNPACK #-} !Int64
+data PaddedLong = PaddedLong {-# UNPACK #-} !Int
+                             {-# UNPACK #-} !Int
+                             {-# UNPACK #-} !Int
+                             {-# UNPACK #-} !Int
+                             {-# UNPACK #-} !Int
+                             {-# UNPACK #-} !Int
+                             {-# UNPACK #-} !Int
+                             !(IORef Int)
+                             {-# UNPACK #-} !Int
+                             {-# UNPACK #-} !Int
+                             {-# UNPACK #-} !Int
+                             {-# UNPACK #-} !Int
+                             {-# UNPACK #-} !Int
+                             {-# UNPACK #-} !Int
+                             {-# UNPACK #-} !Int
 
 data Struct' = Struct' !PaddedLong !PaddedLong
 
 
-unpadded :: Int64 -> IO ()
+unpadded :: Int -> IO ()
 unpadded i = do
     ref1 <- newIORef 0
     ref2 <- newIORef 0
@@ -55,7 +54,7 @@ unpadded i = do
         pair x = (x, x)
 
 
-padded :: Int64 -> IO ()
+padded :: Int -> IO ()
 padded i = do
     ref1 <- newIORef 0
     ref2 <- newIORef 0

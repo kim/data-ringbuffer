@@ -30,13 +30,12 @@ import           Control.Concurrent   (yield)
 import           Control.Monad        (unless)
 import           Data.Bits
 import           Data.CAS
-import           Data.Int
 import           Data.IORef
 import qualified Data.Vector          as V
 import qualified Data.Vector.Mutable  as MV
 
 
-newtype Sequence = Sequence { unSeq :: IORef Int64 }
+newtype Sequence = Sequence (IORef Int)
 
 
 data Sequencer = Sequencer !Sequence
@@ -57,7 +56,7 @@ data Consumer a = Consumer (a -> IO ())
 
 class RingBuffer a where
     consumeFrom :: a b
-                -> Int64        -- ^ mod mask
+                -> Int        -- ^ mod mask
                 -> Barrier
                 -> Consumer b
                 -> IO ()
@@ -78,7 +77,7 @@ instance RingBuffer V.Vector where
         writeSeq sq avail
     {-# INLINE consumeFrom #-}
 
-newtype MVector a = MVector { unMVector :: MV.IOVector a }
+newtype MVector a = MVector (MV.IOVector a)
 instance RingBuffer MVector where
     consumeFrom (MVector mvec) modm barr con = do
         vec <- V.unsafeFreeze mvec
@@ -114,16 +113,16 @@ newConsumer fn = do
 
 -- | Claim the given sequence value for publishing
 claim :: Sequencer
-      -> Int64      -- ^ sequence value to claim
-      -> Int64      -- ^ buffer size
-      -> IO Int64
+      -> Int      -- ^ sequence value to claim
+      -> Int      -- ^ buffer size
+      -> IO Int
 claim (Sequencer _ gates) sq bufsize = await gates sq bufsize
 
 -- | Claim the next available sequence for publishing
 nextSeq :: Sequencer
         -> Sequence  -- ^ sequence to increment for next sequence value
-        -> Int64     -- ^ buffer size
-        -> IO Int64
+        -> Int     -- ^ buffer size
+        -> IO Int
 nextSeq (Sequencer _ gates) sq bufsize = do
     --curr <- readIORef ref
     --await (curr + 1)
@@ -132,7 +131,7 @@ nextSeq (Sequencer _ gates) sq bufsize = do
     await gates next bufsize
 
 -- | Wait for the given sequence value to be available for consumption
-waitFor :: Barrier -> Int64 -> IO Int64
+waitFor :: Barrier -> Int -> IO Int
 waitFor b@(Barrier sq deps) i = do
     avail <- if null deps then readSeq sq else minSeq deps
 
@@ -141,7 +140,7 @@ waitFor b@(Barrier sq deps) i = do
         else yield *> waitFor b i
 
 -- | Make the given sequence visible to consumers
-publish :: Sequencer -> Int64 -> IO ()
+publish :: Sequencer -> Int -> IO ()
 publish s@(Sequencer sq _) i = do
     let expected = i - 1 -- maybe support batch sizes instead of constant 1?
     curr <- readSeq sq
@@ -155,7 +154,7 @@ publish s@(Sequencer sq _) i = do
 -- Util
 --
 
-consumerSeq :: Consumer a -> IO Int64
+consumerSeq :: Consumer a -> IO Int
 consumerSeq (Consumer _ sq) = readSeq sq
 {-# INLINE consumerSeq #-}
 
@@ -164,25 +163,25 @@ consumerSeq (Consumer _ sq) = readSeq sq
 -- Internal
 --
 
-minSeq :: [Sequence] -> IO Int64
+minSeq :: [Sequence] -> IO Int
 minSeq ss = fromIntegral . minimum <$> mapM readSeq ss
 {-# INLINE minSeq #-}
 
-await :: [Sequence] -> Int64 -> Int64 -> IO Int64
+await :: [Sequence] -> Int -> Int -> IO Int
 await gates n bufsize = do
     m <- minSeq gates
     if (n - bufsize <= m) then return n else await gates n bufsize
 {-# INLINE await #-}
 
-addAndGet :: IORef Int64 -> Int64 -> IO Int64
+addAndGet :: IORef Int -> Int -> IO Int
 addAndGet ref delta = atomicModifyIORefCAS ref $! pair . (+delta)
 
     where
         pair x = (x, x)
 {-# INLINE addAndGet #-}
 
-addAndGet' :: Sequence -> Int64 -> IO Int64
-addAndGet' = addAndGet . unSeq
+addAndGet' :: Sequence -> Int -> IO Int
+addAndGet' (Sequence ref) = addAndGet ref
 {-# INLINE addAndGet' #-}
 
 mkSeq :: IO Sequence
@@ -190,12 +189,12 @@ mkSeq = do
     ref <- newIORef (-1)
     return $! Sequence ref
 
-readSeq :: Sequence -> IO Int64
-readSeq = readIORef . unSeq
+readSeq :: Sequence -> IO Int
+readSeq (Sequence ref) = readIORef ref
 {-# INLINE readSeq #-}
 
-writeSeq :: Sequence -> Int64 -> IO ()
-writeSeq = writeIORef . unSeq
+writeSeq :: Sequence -> Int -> IO ()
+writeSeq (Sequence ref) = writeIORef ref
 {-# INLINE writeSeq #-}
 
 

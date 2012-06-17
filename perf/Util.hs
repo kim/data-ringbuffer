@@ -4,17 +4,16 @@ module Util
   , now
   ) where
 
-import Data.Int
 import Data.Time.Clock.POSIX (getPOSIXTime)
 
 
-iterations :: Int64
+iterations :: Int
 iterations = 3000000
 
 now :: IO Double
 now = realToFrac `fmap` getPOSIXTime
 
-printTiming :: Int64 -> Double -> Double -> IO ()
+printTiming :: Int -> Double -> Double -> IO ()
 printTiming iters start end = do
     let diff = end - start
         tps  = (realToFrac iters) / diff
