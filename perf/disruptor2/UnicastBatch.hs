@@ -21,7 +21,8 @@ main = do
     done  <- newEmptyMVar
     start <- now
 
-    forkIO $ mapM_ (pub seqr vals . fromIntegral) [0..iterations]
+    let xs = chunk 10 [0..iterations]
+    forkIO $ mapM_ (pub seqr vals) xs
     forkIO $ consumeAll (MVector vals) modmask (newBarrier seqr []) con done
 
     takeMVar done *> now >>= printTiming iterations start
@@ -30,12 +31,19 @@ main = do
         bufferSize = 1024*8
         modmask    = bufferSize - 1
 
-        idx n = fromIntegral $ n .&. modmask
+        idx n   = fromIntegral $ n .&. modmask
+        {-# INLINE idx #-}
+        chunk n = takeWhile (not . null) . map (take n) . iterate (drop n)
 
-        pub sqr vs i = do
-            next <- claim sqr i bufferSize
-            V.write vs (idx next) i
-            publish sqr next 1
+        pub sqr vs chnk = do
+            let len = length chnk
+                lst = chnk !! (len - 1)
+            next <- claim sqr lst bufferSize
+            mapM_ (upd vs) chnk
+            publish sqr next len
+
+        upd vs x = V.unsafeWrite vs (idx x) x
+        {-# INLINE upd #-}
 
         consumeAll vec modm barr con lock = do
             consumeFrom vec modm barr con
@@ -46,3 +54,4 @@ main = do
 
 
 -- vim: set ts=4 sw=4 et:
+

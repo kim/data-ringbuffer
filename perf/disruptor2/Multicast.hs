@@ -38,7 +38,7 @@ main = do
         pub sqr vs i = do
             next <- claim sqr i bufferSize
             V.write vs (idx next) i
-            publish sqr next
+            publish sqr next 1
 
         forkChild vec seqr con lock = forkIO $
             consumeAll (MVector vec) modmask (newBarrier seqr []) con lock

@@ -56,34 +56,34 @@ data Consumer a = Consumer (a -> IO ())
 
 class RingBuffer a where
     consumeFrom :: a b
-                -> Int        -- ^ mod mask
+                -> Int
+                -- ^ mod mask
                 -> Barrier
                 -> Consumer b
                 -> IO ()
 
-instance RingBuffer V.Vector where
-    consumeFrom vec modm barr (Consumer fn sq) = do
-        next  <- addAndGet' sq 1
-        avail <- waitFor barr next
-
-        let start = fromIntegral $ next .&. modm
-            len   = fromIntegral $ avail - next
-            (_,h) = V.splitAt start vec
-
-        V.mapM_ fn h
-        unless (V.length h >= len) $
-            V.mapM_ fn (V.take (len - V.length h) vec)
-
-        writeSeq sq avail
-    {-# INLINE consumeFrom #-}
 
 newtype MVector a = MVector (MV.IOVector a)
 instance RingBuffer MVector where
-    consumeFrom (MVector mvec) modm barr con = do
+    consumeFrom (MVector mvec) modm barr (Consumer fn sq) = do
         vec <- V.unsafeFreeze mvec
-        consumeFrom vec modm barr con
-    {-# INLINE consumeFrom #-}
+        consumeFrom' vec
 
+        where
+            consumeFrom' vec = do
+                next  <- addAndGet' sq 1
+                avail <- waitFor barr next
+
+                let start = fromIntegral $ next .&. modm
+                    len   = fromIntegral $ avail - next
+                    (_,h) = V.splitAt start vec
+
+                V.mapM_ fn h
+                unless (V.length h >= len) $
+                    V.mapM_ fn (V.take (len - V.length h) vec)
+
+                writeSeq sq avail
+    {-# INLINE consumeFrom #-}
 
 --
 -- Value Constructors
@@ -113,15 +113,19 @@ newConsumer fn = do
 
 -- | Claim the given sequence value for publishing
 claim :: Sequencer
-      -> Int      -- ^ sequence value to claim
-      -> Int      -- ^ buffer size
+      -> Int
+      -- ^ sequence value to claim
+      -> Int
+      -- ^ buffer size
       -> IO Int
 claim (Sequencer _ gates) sq bufsize = await gates sq bufsize
 
 -- | Claim the next available sequence for publishing
 nextSeq :: Sequencer
-        -> Sequence  -- ^ sequence to increment for next sequence value
-        -> Int     -- ^ buffer size
+        -> Sequence
+        -- ^ sequence to increment for next sequence value
+        -> Int
+        -- ^ buffer size
         -> IO Int
 nextSeq (Sequencer _ gates) sq bufsize = do
     --curr <- readIORef ref
@@ -135,19 +139,23 @@ waitFor :: Barrier -> Int -> IO Int
 waitFor b@(Barrier sq deps) i = do
     avail <- if null deps then readSeq sq else minSeq deps
 
+    --print $ "avail " ++ show avail
+
     if avail >= i
         then return avail
         else yield *> waitFor b i
 
 -- | Make the given sequence visible to consumers
-publish :: Sequencer -> Int -> IO ()
-publish s@(Sequencer sq _) i = do
-    let expected = i - 1 -- maybe support batch sizes instead of constant 1?
+publish :: Sequencer -> Int -> Int -> IO ()
+publish s@(Sequencer sq _) i batchsize = do
+    let expected = i - batchsize
     curr <- readSeq sq
+
+    --print $ "expected " ++ show expected ++ ", curr " ++ show curr
 
     if expected == curr
         then writeSeq sq i
-        else publish s i
+        else publish s i batchsize
 
 
 --
