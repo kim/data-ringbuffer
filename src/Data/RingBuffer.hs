@@ -5,10 +5,6 @@ module Data.RingBuffer
     , Sequence
     , Sequencer
 
-    -- * Classes
-    , RingBuffer(..)
-    , MVector(..)
-
     -- * Value Constructors
     , newSequencer
     , newConsumer
@@ -17,6 +13,7 @@ module Data.RingBuffer
     -- * Concurrent Access, aka Disruptor API
     , claim
     , nextSeq
+    , nextBatch
     , waitFor
     , publish
 
@@ -25,65 +22,11 @@ module Data.RingBuffer
     )
 where
 
-import           Control.Applicative  ((<$>), (*>))
-import           Control.Concurrent   (yield)
-import           Control.Monad        (unless)
-import           Data.Bits
-import           Data.CAS
-import           Data.IORef
-import qualified Data.Vector          as V
-import qualified Data.Vector.Mutable  as MV
+import           Control.Applicative        ((*>))
+import           Control.Concurrent         (yield)
+import           Data.RingBuffer.Internal
+import           Data.RingBuffer.Types
 
-
-newtype Sequence = Sequence (IORef Int)
-
-
-data Sequencer = Sequencer !Sequence
-                           -- ^ cursor
-                           ![Sequence]
-                           -- ^ gating (aka consumer) sequences
-
-data Barrier = Barrier !Sequence
-                       -- ^ cursor (must point to the same sequence as the
-                       -- corresponding 'Sequencer')
-                       ![Sequence]
-                       -- ^ dependent sequences (optional)
-
-data Consumer a = Consumer (a -> IO ())
-                           -- ^ consuming function
-                           !Sequence
-                           -- ^ consumer sequence
-
-class RingBuffer a where
-    consumeFrom :: a b
-                -> Int
-                -- ^ mod mask
-                -> Barrier
-                -> Consumer b
-                -> IO ()
-
-
-newtype MVector a = MVector (MV.IOVector a)
-instance RingBuffer MVector where
-    consumeFrom (MVector mvec) modm barr (Consumer fn sq) = do
-        vec <- V.unsafeFreeze mvec
-        consumeFrom' vec
-
-        where
-            consumeFrom' vec = do
-                next  <- addAndGet' sq 1
-                avail <- waitFor barr next
-
-                let start = fromIntegral $ next .&. modm
-                    len   = fromIntegral $ avail - next
-                    (_,h) = V.splitAt start vec
-
-                V.mapM_ fn h
-                unless (V.length h >= len) $
-                    V.mapM_ fn (V.take (len - V.length h) vec)
-
-                writeSeq sq avail
-    {-# INLINE consumeFrom #-}
 
 --
 -- Value Constructors
@@ -111,28 +54,37 @@ newConsumer fn = do
 -- Disruptor API
 --
 
--- | Claim the given sequence value for publishing
+-- | Claim the given position in the sequence for publishing
 claim :: Sequencer
       -> Int
-      -- ^ sequence value to claim
+      -- ^ position to claim
       -> Int
       -- ^ buffer size
       -> IO Int
 claim (Sequencer _ gates) sq bufsize = await gates sq bufsize
 
--- | Claim the next available sequence for publishing
+-- | Claim the next available position in the sequence for publishing
 nextSeq :: Sequencer
         -> Sequence
-        -- ^ sequence to increment for next sequence value
+        -- ^ sequence to increment for next position
         -> Int
         -- ^ buffer size
         -> IO Int
-nextSeq (Sequencer _ gates) sq bufsize = do
-    --curr <- readIORef ref
-    --await (curr + 1)
+nextSeq sqr sq bufsize = nextBatch sqr sq 1 bufsize
 
-    next <- addAndGet' sq 1
-    await gates next bufsize
+-- | Claim a batch of positions in the sequence for publishing
+nextBatch :: Sequencer
+          -> Sequence
+          -- ^ sequence to increment by requested batch
+          -> Int
+          -- ^ batch size
+          -> Int
+          -- ^ buffer size
+          -> IO Int
+          -- ^ the largest position claimed
+nextBatch sqr sq n bufsize = do
+    next <- addAndGet sq n
+    claim sqr next bufsize
 
 -- | Wait for the given sequence value to be available for consumption
 waitFor :: Barrier -> Int -> IO Int
@@ -165,45 +117,6 @@ publish s@(Sequencer sq _) i batchsize = do
 consumerSeq :: Consumer a -> IO Int
 consumerSeq (Consumer _ sq) = readSeq sq
 {-# INLINE consumerSeq #-}
-
-
---
--- Internal
---
-
-minSeq :: [Sequence] -> IO Int
-minSeq ss = fromIntegral . minimum <$> mapM readSeq ss
-{-# INLINE minSeq #-}
-
-await :: [Sequence] -> Int -> Int -> IO Int
-await gates n bufsize = do
-    m <- minSeq gates
-    if (n - bufsize <= m) then return n else await gates n bufsize
-{-# INLINE await #-}
-
-addAndGet :: IORef Int -> Int -> IO Int
-addAndGet ref delta = atomicModifyIORefCAS ref $! pair . (+delta)
-
-    where
-        pair x = (x, x)
-{-# INLINE addAndGet #-}
-
-addAndGet' :: Sequence -> Int -> IO Int
-addAndGet' (Sequence ref) = addAndGet ref
-{-# INLINE addAndGet' #-}
-
-mkSeq :: IO Sequence
-mkSeq = do
-    ref <- newIORef (-1)
-    return $! Sequence ref
-
-readSeq :: Sequence -> IO Int
-readSeq (Sequence ref) = readIORef ref
-{-# INLINE readSeq #-}
-
-writeSeq :: Sequence -> Int -> IO ()
-writeSeq (Sequence ref) = writeIORef ref
-{-# INLINE writeSeq #-}
 
 
 -- vim: set ts=4 sw=4 et:

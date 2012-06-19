@@ -1,28 +1,27 @@
 module Main where
 
-import           Control.Applicative  ((*>))
-import           Control.Concurrent   ( newEmptyMVar
-                                      , putMVar
-                                      , takeMVar
-                                      , forkIO
-                                      )
-import           Control.DeepSeq      (rnf)
-import           Data.Bits
+import           Control.Applicative    ((*>))
+import           Control.Concurrent     ( newEmptyMVar
+                                        , putMVar
+                                        , takeMVar
+                                        , forkIO
+                                        )
+import           Control.DeepSeq        (rnf)
 import           Data.RingBuffer
-import qualified Data.Vector.Mutable  as V
-import Util
+import           Data.RingBuffer.Vector
+import           Util
 
 
 main :: IO ()
 main = do
     con   <- newConsumer (return . rnf)
     seqr  <- newSequencer [con]
-    vals  <- V.replicate (fromIntegral bufferSize) 0
+    buf   <- newRingBuffer bufferSize 0
     done  <- newEmptyMVar
     start <- now
 
-    forkIO $ mapM_ (pub seqr vals . fromIntegral) [0..iterations]
-    forkIO $ consumeAll (MVector vals) modmask (newBarrier seqr []) con done
+    forkIO $ mapM_ (pub buf seqr) [0..iterations]
+    forkIO $ consumeAll buf modmask (newBarrier seqr []) con done
 
     takeMVar done *> now >>= printTiming iterations start
 
@@ -30,19 +29,14 @@ main = do
         bufferSize = 1024*8
         modmask    = bufferSize - 1
 
-        idx n = fromIntegral $ n .&. modmask
+        pub buf seqr i = publishTo buf modmask seqr i i
 
-        pub sqr vs i = do
-            next <- claim sqr i bufferSize
-            V.write vs (idx next) i
-            publish sqr next 1
-
-        consumeAll vec modm barr con lock = do
-            consumeFrom vec modm barr con
+        consumeAll buf modm barr con lock = do
+            consumeFrom buf modm barr con
             consumed <- consumerSeq con
             if consumed == iterations
                 then putMVar lock ()
-                else consumeAll vec modm barr con lock
+                else consumeAll buf modm barr con lock
 
 
 -- vim: set ts=4 sw=4 et:
