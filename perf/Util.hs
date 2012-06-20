@@ -5,10 +5,11 @@ module Util
   ) where
 
 import Data.Time.Clock.POSIX (getPOSIXTime)
+import Text.Printf           (printf)
 
 
 iterations :: Int
-iterations = 3000000
+iterations = 1000 * 1000 * 100
 
 now :: IO Double
 now = realToFrac `fmap` getPOSIXTime
@@ -16,8 +17,14 @@ now = realToFrac `fmap` getPOSIXTime
 printTiming :: Int -> Double -> Double -> IO ()
 printTiming iters start end = do
     let diff = end - start
-        tps  = (realToFrac iters) / diff
-    putStrLn $ "done in " ++ show diff ++ " sec (" ++ show tps ++ " tps)"
+    putStrLn $ printf "done in %s (%s tps)" (time diff) (tps diff iters)
+
+    where
+        tps :: Double -> Int -> String
+        tps d i = printf "%.0f" ((realToFrac i) / d)
+
+        time :: Double -> String
+        time d  = printf "%.4f sec" d
 
 
 -- vim: set ts=4 sw=4 et:
