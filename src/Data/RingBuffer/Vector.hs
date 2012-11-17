@@ -63,9 +63,9 @@ consumeFrom (MVector mvec) modm barr (Consumer fn sq) = do
                 len   = avail - next
                 (_,h) = V.splitAt start vec
 
-            V.mapM_ fn h
+            V.mapM_ fn . V.take len $ h
             unless (V.length h >= len) $
-                V.mapM_ fn (V.take (len - V.length h) vec)
+                V.mapM_ fn . V.take (len - V.length h) $ vec
 
             writeSeq sq avail
 {-# INLINE consumeFrom #-}
