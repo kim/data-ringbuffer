@@ -51,23 +51,19 @@ newRingBuffer size zero = do
 
 consumeFrom :: MVector a -> Int -> Barrier -> Consumer a -> IO ()
 consumeFrom (MVector mvec) modm barr (Consumer fn sq) = do
-    vec <- V.unsafeFreeze mvec
-    consumeFrom' vec
+    vec   <- V.unsafeFreeze mvec
+    next  <- addAndGet sq 1
+    avail <- waitFor barr next
 
-    where
-        consumeFrom' vec = do
-            next  <- addAndGet sq 1
-            avail <- waitFor barr next
+    let start = next .&. modm
+        len   = avail - next
+        (_,h) = V.splitAt start vec
 
-            let start = next .&. modm
-                len   = avail - next
-                (_,h) = V.splitAt start vec
+    V.mapM_ fn . V.take len $ h
+    unless (V.length h >= len) $
+        V.mapM_ fn . V.take (len - V.length h) $ vec
 
-            V.mapM_ fn . V.take len $ h
-            unless (V.length h >= len) $
-                V.mapM_ fn . V.take (len - V.length h) $ vec
-
-            writeSeq sq avail
+    writeSeq sq avail
 {-# INLINE consumeFrom #-}
 
 publishTo :: MVector a -> Int -> Sequencer -> Int -> a -> IO ()
