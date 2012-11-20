@@ -9,13 +9,14 @@ module Data.RingBuffer.Vector
     )
 where
 
-import           Control.Monad        (unless)
+import           Control.Monad                     (unless)
 import           Data.Bits
-import qualified Data.Vector          as V
-import qualified Data.Vector.Mutable  as MV
+import           Data.Vector.Generic.Mutable       (mstream)
+import qualified Data.Vector.Mutable               as MV
+import qualified Data.Vector.Fusion.Stream.Monadic as S
 
 import           Data.RingBuffer
-import qualified Data.RingBuffer.Class      as C
+import qualified Data.RingBuffer.Class             as C
 import           Data.RingBuffer.Internal
 import           Data.RingBuffer.Types
 
@@ -51,17 +52,17 @@ newRingBuffer size zero = do
 
 consumeFrom :: MVector a -> Int -> Barrier -> Consumer a -> IO ()
 consumeFrom (MVector mvec) modm barr (Consumer fn sq) = do
-    vec   <- V.unsafeFreeze mvec
     next  <- addAndGet sq 1
     avail <- waitFor barr next
 
     let start = next .&. modm
         len   = avail - next
-        (_,h) = V.splitAt start vec
+        (_,t) = MV.splitAt start mvec
+        tlen  = MV.length t
 
-    V.mapM_ fn . V.take len $ h
-    unless (V.length h >= len) $
-        V.mapM_ fn . V.take (len - V.length h) $ vec
+    S.mapM_ fn . mstream . MV.take len $ t
+    unless (tlen >= len) $
+        S.mapM_ fn . mstream . MV.take (len - tlen) $ mvec
 
     writeSeq sq avail
 {-# INLINE consumeFrom #-}
