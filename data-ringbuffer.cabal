@@ -1,5 +1,5 @@
 name:                data-ringbuffer
-version:             0.2
+version:             0.3
 synopsis:            Ringbuffer implementation using Vectors, inspired by the "Disruptor Pattern"
 homepage:            https://github.com/kim/data-ringbuffer
 license:             OtherLicense
