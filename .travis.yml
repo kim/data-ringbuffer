@@ -1,6 +1,8 @@
 language: haskell
-install:  cabal install --enable-benchmarks
-script:   dist/perf-data-ringbuffer/perf-data-ringbuffer +RTS -N
+install: cabal configure --enable-benchmarks; cabal install --only-dependencies
+before_script: cabal build
+script: dist/perf-data-ringbuffer/perf-data-ringbuffer +RTS -N
+after_script: cabal install
 notifications:
   email:
     - kim.altintop@gmail.com
