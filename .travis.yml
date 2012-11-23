@@ -1,6 +1,4 @@
 language: haskell
-install:  cabal install --enable-benchmarks
-script:   make travis
 notifications:
   email:
     - kim.altintop@gmail.com
