@@ -1,4 +1,4 @@
-module Main where
+module TChan.Multicast (run) where
 
 import Control.Concurrent
 import Control.Concurrent.STM
@@ -7,8 +7,8 @@ import Control.Monad            (replicateM, unless)
 import Util
 
 
-main :: IO ()
-main = do
+run :: Int -> IO ()
+run i = do
     chans <- replicateM 3 newTChanIO
     dones <- replicateM 3 newEmptyMVar
     start <- now
@@ -17,15 +17,15 @@ main = do
     mapM_ (\(ch,lck) -> forkChild ch lck) $ zip chans dones
 
     mapM_ takeMVar dones
-    now >>= printTiming iterations start
+    now >>= printTiming i start
 
     where
-        publishTChan chans i = unless (i > iterations) $ do
-            mapM_ (\chan -> atomically (writeTChan chan i)) chans
-            publishTChan chans (i + 1)
+        publishTChan chans i' = unless (i' > i) $ do
+            mapM_ (\chan -> atomically (writeTChan chan i')) chans
+            publishTChan chans (i' + 1)
 
-        consumeTChan chan i = unless (i > iterations)
-            $ atomically (readTChan chan) >> consumeTChan chan (i + 1)
+        consumeTChan chan i' = unless (i' > i)
+            $ atomically (readTChan chan) >> consumeTChan chan (i' + 1)
 
         forkChild chan lck = forkIO $
             consumeTChan chan 0 `finally` putMVar lck ()

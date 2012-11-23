@@ -1,15 +1,10 @@
 module Util
-  ( iterations
-  , printTiming
+  ( printTiming
   , now
   ) where
 
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Text.Printf           (printf)
-
-
-iterations :: Int
-iterations = 1000 * 1000 * 100
 
 now :: IO Double
 now = realToFrac `fmap` getPOSIXTime

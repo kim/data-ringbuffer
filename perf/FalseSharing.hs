@@ -1,12 +1,14 @@
-module Main where
+module FalseSharing
+    ( unpadded
+    , padded
+    )
+where
 
 import Control.Concurrent  ( newEmptyMVar
                            , putMVar
                            , takeMVar
                            , forkIO
                            )
-import Criterion           (bench)
-import Criterion.Main      (defaultMain)
 import Data.IORef
 import Data.CAS
 
@@ -78,12 +80,6 @@ padded i = do
         pair x = (x, x)
 
         mkPad ref = PaddedLong 7 7 7 7 7 7 7 ref 7 7 7 7 7 7 7
-
-
-main :: IO ()
-main = defaultMain [ bench "unpadded" $ unpadded 1000000
-                   , bench "padded"   $ padded   1000000
-                   ]
 
 
 -- vim: set ts=4 sw=4 et:
