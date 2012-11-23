@@ -1,6 +1,5 @@
 language: haskell
-install:  cabal install --enable-benchmarks
-script:   cabal bench --benchmark-options="+RTS -N"
+script:  cabal install --enable-benchmarks && cabal bench --benchmark-options="+RTS -N"
 notifications:
   email:
     - kim.altintop@gmail.com
