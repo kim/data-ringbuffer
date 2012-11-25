@@ -1,4 +1,6 @@
 language: haskell
+install:  cabal install cabal-dev
+script:   cabal-dev configure --enable-benchmarks && cabal-dev install --only-dependencies && cabal-dev build && cabal-dev bench --benchmark-options="+RTS -N"
 notifications:
   email:
     - kim.altintop@gmail.com
