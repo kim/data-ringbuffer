@@ -1,4 +1,6 @@
 language: haskell
+install:  cabal install --only-dependencies --enable-benchmarks
+script:   cabal configure --enable-benchmarks && cabal build && cabal bench
 notifications:
   email:
     - kim.altintop@gmail.com
