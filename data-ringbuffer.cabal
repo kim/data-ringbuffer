@@ -46,4 +46,4 @@ benchmark perf-data-ringbuffer
                    , vector
   default-language:  Haskell2010
   ghc-options:       -Wall -O2 -threaded -rtsopts -fno-warn-unused-do-bind
-  hs-source-dirs:    perf
+  hs-source-dirs:    perf, perf/disruptor2, perf/tchan
