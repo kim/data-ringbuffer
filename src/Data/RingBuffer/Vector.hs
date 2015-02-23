@@ -1,5 +1,5 @@
 module Data.RingBuffer.Vector
-    ( MVector (..)
+    ( RingBuffer (..)
     , newRingBuffer
     , consumeFrom
     , publishTo
@@ -19,13 +19,13 @@ import           Data.Vector.Generic.Mutable       (mstream)
 import qualified Data.Vector.Mutable               as MV
 
 
-newtype MVector a = MVector (MV.IOVector a)
+newtype RingBuffer a = RingBuffer (MV.IOVector a)
 
 
-newRingBuffer :: Int -> a -> IO (MVector a)
+newRingBuffer :: Int -> a -> IO (RingBuffer a)
 newRingBuffer size zero = do
     mvec <- MV.replicate (ceilNextPowerOfTwo size) zero
-    return (MVector mvec)
+    return (RingBuffer mvec)
 
     where
         ceilNextPowerOfTwo i = shiftL 1 (32 - numberOfLeadingZeros (i - 1))
@@ -40,8 +40,8 @@ newRingBuffer size zero = do
                          | otherwise = n - shiftR i' 31
 {-# INLINE newRingBuffer #-}
 
-consumeFrom :: MVector a -> Int -> Barrier -> Consumer a -> IO ()
-consumeFrom (MVector mvec) modm barr (Consumer fn sq) = do
+consumeFrom :: RingBuffer a -> Int -> Barrier -> Consumer a -> IO ()
+consumeFrom (RingBuffer mvec) modm barr (Consumer fn sq) = do
     next  <- addAndGet sq 1
     avail <- waitFor barr next
 
@@ -57,15 +57,15 @@ consumeFrom (MVector mvec) modm barr (Consumer fn sq) = do
     writeSeq sq avail
 {-# INLINE consumeFrom #-}
 
-publishTo :: MVector a -> Int -> Sequencer -> Int -> a -> IO ()
-publishTo (MVector mvec) modm seqr i v = do
+publishTo :: RingBuffer a -> Int -> Sequencer -> Int -> a -> IO ()
+publishTo (RingBuffer mvec) modm seqr i v = do
     next <- claim seqr i (MV.length mvec)
     MV.unsafeWrite mvec (next .&. modm) v
     publish seqr next 1
 {-# INLINE publishTo #-}
 
-batchPublishTo :: MVector a -> Int -> Sequencer -> Int -> [a] -> IO ()
-batchPublishTo (MVector mvec) modm seqr i vs = do
+batchPublishTo :: RingBuffer a -> Int -> Sequencer -> Int -> [a] -> IO ()
+batchPublishTo (RingBuffer mvec) modm seqr i vs = do
     next <- claim seqr i (MV.length mvec)
     mapM_ update $ zip [next - len + 1..next] vs
     publish seqr next len
@@ -76,15 +76,15 @@ batchPublishTo (MVector mvec) modm seqr i vs = do
     update (n,x) = MV.unsafeWrite mvec (n .&. modm) x
 {-# INLINE batchPublishTo #-}
 
-concPublishTo :: MVector a -> Int -> Sequencer -> Sequence -> a -> IO ()
-concPublishTo (MVector mvec) modm seqr sq v = do
+concPublishTo :: RingBuffer a -> Int -> Sequencer -> Sequence -> a -> IO ()
+concPublishTo (RingBuffer mvec) modm seqr sq v = do
     next <- nextSeq seqr sq (MV.length mvec)
     MV.unsafeWrite mvec (next .&. modm) v
     publish seqr next 1
 {-# INLINE concPublishTo #-}
 
-concBatchPublishTo :: MVector a -> Int -> Sequencer -> Sequence -> Int -> [a] -> IO ()
-concBatchPublishTo (MVector mvec) modm seqr sq i vs = do
+concBatchPublishTo :: RingBuffer a -> Int -> Sequencer -> Sequence -> Int -> [a] -> IO ()
+concBatchPublishTo (RingBuffer mvec) modm seqr sq i vs = do
     next <- nextBatch seqr sq i (MV.length mvec)
     mapM_ update $ zip [next - len + 1..next] vs
     publish seqr next len
