@@ -1,8 +1,7 @@
 module Main where
 
-import Criterion        (bench)
-import Criterion.Config
-import Criterion.Main   (defaultMainWith)
+import Criterion.Types
+import Criterion.Main   (defaultMain)
 
 import qualified FalseSharing
 import qualified TChan.Multicast
@@ -15,19 +14,13 @@ import qualified Disruptor2.UnicastBatch
 iterations :: Int
 iterations = 1000000
 
-config :: Config
-config = defaultConfig
-    { cfgPerformGC = ljust True
-    , cfgSamples   = ljust 5
-    }
-
 main :: IO ()
-main = defaultMainWith config (return ())
-    [ bench "FalseSharing.unpadded"   $ FalseSharing.unpadded iterations
-    , bench "FalseSharing.padded"     $ FalseSharing.padded iterations
-    , bench "TChan.Multicast"         $ TChan.Multicast.run iterations
-    , bench "TChan.Unicast"           $ TChan.Unicast.run iterations
-    , bench "Disruptor2.Multicast"    $ Disruptor2.Multicast.run iterations
-    , bench "Disruptor2.Unicast"      $ Disruptor2.Unicast.run iterations
-    , bench "Disruptor2.UnicastBatch" $ Disruptor2.UnicastBatch.run iterations
+main = defaultMain
+    [ bench "FalseSharing.unpadded"   . nfIO . FalseSharing.unpadded       $ iterations
+    , bench "FalseSharing.padded"     . nfIO . FalseSharing.padded         $ iterations
+    , bench "TChan.Multicast"         . nfIO . TChan.Multicast.run         $ iterations
+    , bench "TChan.Unicast"           . nfIO . TChan.Unicast.run           $ iterations
+    , bench "Disruptor2.Multicast"    . nfIO . Disruptor2.Multicast.run    $ iterations
+    , bench "Disruptor2.Unicast"      . nfIO . Disruptor2.Unicast.run      $ iterations
+    , bench "Disruptor2.UnicastBatch" . nfIO . Disruptor2.UnicastBatch.run $ iterations
     ]
