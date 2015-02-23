@@ -16,20 +16,11 @@ import qualified Data.Vector.Mutable               as MV
 import qualified Data.Vector.Fusion.Stream.Monadic as S
 
 import           Data.RingBuffer
-import qualified Data.RingBuffer.Class             as C
 import           Data.RingBuffer.Internal
 import           Data.RingBuffer.Types
 
 
 newtype MVector a = MVector (MV.IOVector a)
-
-instance C.RingBuffer MVector where
-    newRingBuffer      = newRingBuffer
-    consumeFrom        = consumeFrom
-    publishTo          = publishTo
-    batchPublishTo     = batchPublishTo
-    concPublishTo      = concPublishTo
-    concBatchPublishTo = concBatchPublishTo
 
 
 newRingBuffer :: Int -> a -> IO (MVector a)

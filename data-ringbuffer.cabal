@@ -19,7 +19,6 @@ source-repository head
 
 library
   exposed-modules:   Data.RingBuffer
-                   , Data.RingBuffer.Class
                    , Data.RingBuffer.Vector
   other-modules:     Data.RingBuffer.Internal
                    , Data.RingBuffer.Types
