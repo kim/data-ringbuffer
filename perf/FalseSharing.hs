@@ -10,7 +10,7 @@ import Control.Concurrent  ( newEmptyMVar
                            , forkIO
                            )
 import Data.IORef
-import Data.CAS
+import Data.Atomics
 
 
 data Struct = Struct !(IORef Int) !(IORef Int)

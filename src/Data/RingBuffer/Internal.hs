@@ -9,7 +9,7 @@ module Data.RingBuffer.Internal
 where
 
 import           Control.Applicative  ((<$>))
-import           Data.CAS
+import           Data.Atomics
 import           Data.IORef
 import           Data.RingBuffer.Types
 
