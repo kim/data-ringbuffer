@@ -25,23 +25,23 @@ run i = do
 
     takeMVar done *> now >>= printTiming i start
 
-    where
-        bufferSize = 1024*8
-        modmask    = bufferSize - 1
+  where
+      bufferSize = 1024*8
+      modmask    = bufferSize - 1
 
-        chunk n = takeWhile (not . null) . map (take n) . iterate (drop n)
+      chunk n = takeWhile (not . null) . map (take n) . iterate (drop n)
 
-        pub buf sqr chnk = do
-            let len = length chnk
-                lst = chnk !! (len - 1)
-            batchPublishTo buf modmask sqr lst chnk
+      pub buf sqr chnk = do
+          let len = length chnk
+              lst = chnk !! (len - 1)
+          batchPublishTo buf modmask sqr lst chnk
 
-        consumeAll buf modm barr con lock = do
-            consumeFrom buf modm barr con
-            consumed <- consumerSeq con
-            if consumed == i
-                then putMVar lock ()
-                else consumeAll buf modm barr con lock
+      consumeAll buf modm barr con lock = do
+          consumeFrom buf modm barr con
+          consumed <- consumerSeq con
+          if consumed == i
+              then putMVar lock ()
+              else consumeAll buf modm barr con lock
 
 
 -- vim: set ts=4 sw=4 et:

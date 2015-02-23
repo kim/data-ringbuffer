@@ -49,11 +49,11 @@ unpadded i = do
 
     mapM_ takeMVar [lck1,lck2]
 
-    where
-        incA (Struct a _) = atomicModifyIORefCAS a $ pair . (+1)
-        incB (Struct _ b) = atomicModifyIORefCAS b $ pair . (+1)
+  where
+    incA (Struct a _) = atomicModifyIORefCAS a $ pair . (+1)
+    incB (Struct _ b) = atomicModifyIORefCAS b $ pair . (+1)
 
-        pair x = (x, x)
+    pair x = (x, x)
 
 
 padded :: Int -> IO ()
@@ -71,15 +71,15 @@ padded i = do
 
     mapM_ takeMVar [lck1,lck2]
 
-    where
-        incA (Struct' (PaddedLong _ _ _ _ _ _ _ a _ _ _ _ _ _ _) _) =
-            atomicModifyIORefCAS a $ pair . (+1)
-        incB (Struct' _ (PaddedLong _ _ _ _ _ _ _ b _ _ _ _ _ _ _)) =
-            atomicModifyIORefCAS b $ pair . (+1)
+  where
+    incA (Struct' (PaddedLong _ _ _ _ _ _ _ a _ _ _ _ _ _ _) _) =
+        atomicModifyIORefCAS a $ pair . (+1)
+    incB (Struct' _ (PaddedLong _ _ _ _ _ _ _ b _ _ _ _ _ _ _)) =
+        atomicModifyIORefCAS b $ pair . (+1)
 
-        pair x = (x, x)
+    pair x = (x, x)
 
-        mkPad ref = PaddedLong 7 7 7 7 7 7 7 ref 7 7 7 7 7 7 7
+    mkPad ref = PaddedLong 7 7 7 7 7 7 7 ref 7 7 7 7 7 7 7
 
 
 -- vim: set ts=4 sw=4 et:

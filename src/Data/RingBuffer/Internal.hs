@@ -8,10 +8,10 @@ module Data.RingBuffer.Internal
     )
 where
 
-import           Control.Applicative  ((<$>))
-import           Data.Atomics
-import           Data.IORef
-import           Data.RingBuffer.Types
+import Control.Applicative   ((<$>))
+import Data.Atomics
+import Data.IORef
+import Data.RingBuffer.Types
 
 
 minSeq :: [Sequence] -> IO Int
@@ -27,9 +27,8 @@ await gates n bufsize = do
 
 addAndGet :: Sequence -> Int -> IO Int
 addAndGet (Sequence ref) delta = atomicModifyIORefCAS ref $! pair . (+delta)
-
-    where
-        pair x = (x, x)
+  where
+    pair x = (x, x)
 {-# INLINE addAndGet #-}
 
 mkSeq :: IO Sequence

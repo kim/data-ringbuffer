@@ -22,10 +22,10 @@ module Data.RingBuffer
     )
 where
 
-import           Control.Applicative        ((*>))
-import           Control.Concurrent         (yield)
-import           Data.RingBuffer.Internal
-import           Data.RingBuffer.Types
+import Control.Applicative      ((*>))
+import Control.Concurrent       (yield)
+import Data.RingBuffer.Internal
+import Data.RingBuffer.Types
 
 
 --

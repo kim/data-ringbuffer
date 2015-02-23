@@ -19,16 +19,16 @@ run i = do
     mapM_ takeMVar dones
     now >>= printTiming i start
 
-    where
-        publishTChan chans i' = unless (i' > i) $ do
-            mapM_ (\chan -> atomically (writeTChan chan i')) chans
-            publishTChan chans (i' + 1)
+  where
+    publishTChan chans i' = unless (i' > i) $ do
+        mapM_ (\chan -> atomically (writeTChan chan i')) chans
+        publishTChan chans (i' + 1)
 
-        consumeTChan chan i' = unless (i' > i)
-            $ atomically (readTChan chan) >> consumeTChan chan (i' + 1)
+    consumeTChan chan i' = unless (i' > i) $
+        atomically (readTChan chan) >> consumeTChan chan (i' + 1)
 
-        forkChild chan lck = forkIO $
-            consumeTChan chan 0 `finally` putMVar lck ()
+    forkChild chan lck = forkIO $
+        consumeTChan chan 0 `finally` putMVar lck ()
 
 
 -- vim: set ts=4 sw=4 et:

@@ -1,5 +1,5 @@
 module Data.RingBuffer.Vector
-    ( MVector(..)
+    ( MVector (..)
     , newRingBuffer
     , consumeFrom
     , publishTo
@@ -11,13 +11,12 @@ where
 
 import           Control.Monad                     (unless)
 import           Data.Bits
-import           Data.Vector.Generic.Mutable       (mstream)
-import qualified Data.Vector.Mutable               as MV
-import qualified Data.Vector.Fusion.Stream.Monadic as S
-
 import           Data.RingBuffer
 import           Data.RingBuffer.Internal
 import           Data.RingBuffer.Types
+import qualified Data.Vector.Fusion.Stream.Monadic as S
+import           Data.Vector.Generic.Mutable       (mstream)
+import qualified Data.Vector.Mutable               as MV
 
 
 newtype MVector a = MVector (MV.IOVector a)
@@ -47,7 +46,7 @@ consumeFrom (MVector mvec) modm barr (Consumer fn sq) = do
     avail <- waitFor barr next
 
     let start = next .&. modm
-        len   = avail - next
+        len   = avail - next + 1
         (_,t) = MV.splitAt start mvec
         tlen  = MV.length t
 
@@ -71,10 +70,10 @@ batchPublishTo (MVector mvec) modm seqr i vs = do
     mapM_ update $ zip [next - len + 1..next] vs
     publish seqr next len
 
-    where
-        len = length vs
+  where
+    len = length vs
 
-        update (n,x) = MV.unsafeWrite mvec (n .&. modm) x
+    update (n,x) = MV.unsafeWrite mvec (n .&. modm) x
 {-# INLINE batchPublishTo #-}
 
 concPublishTo :: MVector a -> Int -> Sequencer -> Sequence -> a -> IO ()
@@ -90,10 +89,10 @@ concBatchPublishTo (MVector mvec) modm seqr sq i vs = do
     mapM_ update $ zip [next - len + 1..next] vs
     publish seqr next len
 
-    where
-        len = length vs
+  where
+    len = length vs
 
-        update (n,x) = MV.unsafeWrite mvec (n .&. modm) x
+    update (n,x) = MV.unsafeWrite mvec (n .&. modm) x
 {-# INLINE concBatchPublishTo #-}
 
 
