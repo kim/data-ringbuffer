@@ -28,20 +28,19 @@ run i = do
     now >>= printTiming i start
 
   where
-      bufferSize = 1024*8
-      modmask    = bufferSize - 1
+    bufferSize = 1024*8
 
-      pub buf seqr i' = publishTo buf modmask seqr i' i'
+    pub buf seqr i' = publishTo buf seqr i' i'
 
-      forkChild buf seqr con lock = forkIO $
-          consumeAll buf modmask (newBarrier seqr []) con lock
+    forkChild buf seqr con lock = forkIO $
+        consumeAll buf (newBarrier seqr []) con lock
 
-      consumeAll buf modm barr con lock = do
-          consumeFrom buf modm barr con
-          consumed <- consumerSeq con
-          if consumed == i
-              then putMVar lock ()
-              else consumeAll buf modm barr con lock
+    consumeAll buf barr con lock = do
+        consumeFrom buf barr con
+        consumed <- consumerSeq con
+        if consumed == i
+            then putMVar lock ()
+            else consumeAll buf barr con lock
 
 
 -- vim: set ts=4 sw=4 et:

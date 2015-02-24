@@ -19,29 +19,31 @@ import           Data.Vector.Generic.Mutable       (mstream)
 import qualified Data.Vector.Mutable               as MV
 
 
-newtype RingBuffer a = RingBuffer (MV.IOVector a)
+data RingBuffer a = RingBuffer !(MV.IOVector a) !Int
 
 
 newRingBuffer :: Int -> a -> IO (RingBuffer a)
 newRingBuffer size zero = do
+    let size' = ceilNextPowerOfTwo size
+        modm  = size' - 1
     mvec <- MV.replicate (ceilNextPowerOfTwo size) zero
-    return (RingBuffer mvec)
+    return (RingBuffer mvec modm)
 
-    where
-        ceilNextPowerOfTwo i = shiftL 1 (32 - numberOfLeadingZeros (i - 1))
+  where
+    ceilNextPowerOfTwo i = shiftL 1 (32 - numberOfLeadingZeros (i - 1))
 
-        numberOfLeadingZeros i = nlz i 1
-            where
-                nlz 0 _ = 32
-                nlz i' n | shiftR i' 16 == 0 = nlz (shiftL i' 16) (n + 16)
-                         | shiftR i' 24 == 0 = nlz (shiftL i'  8) (n +  8)
-                         | shiftR i' 28 == 0 = nlz (shiftL i'  4) (n +  4)
-                         | shiftR i' 30 == 0 = nlz (shiftL i'  2) (n +  2)
-                         | otherwise = n - shiftR i' 31
+    numberOfLeadingZeros i = nlz i 1
+      where
+        nlz 0 _ = 32
+        nlz i' n | shiftR i' 16 == 0 = nlz (shiftL i' 16) (n + 16)
+                 | shiftR i' 24 == 0 = nlz (shiftL i'  8) (n +  8)
+                 | shiftR i' 28 == 0 = nlz (shiftL i'  4) (n +  4)
+                 | shiftR i' 30 == 0 = nlz (shiftL i'  2) (n +  2)
+                 | otherwise = n - shiftR i' 31
 {-# INLINE newRingBuffer #-}
 
-consumeFrom :: RingBuffer a -> Int -> Barrier -> Consumer a -> IO ()
-consumeFrom (RingBuffer mvec) modm barr (Consumer fn sq) = do
+consumeFrom :: RingBuffer a -> Barrier -> Consumer a -> IO ()
+consumeFrom (RingBuffer mvec modm) barr (Consumer fn sq) = do
     next  <- addAndGet sq 1
     avail <- waitFor barr next
 
@@ -57,15 +59,15 @@ consumeFrom (RingBuffer mvec) modm barr (Consumer fn sq) = do
     writeSeq sq avail
 {-# INLINE consumeFrom #-}
 
-publishTo :: RingBuffer a -> Int -> Sequencer -> Int -> a -> IO ()
-publishTo (RingBuffer mvec) modm seqr i v = do
+publishTo :: RingBuffer a -> Sequencer -> Int -> a -> IO ()
+publishTo (RingBuffer mvec modm) seqr i v = do
     next <- claim seqr i (MV.length mvec)
     MV.unsafeWrite mvec (next .&. modm) v
     publish seqr next 1
 {-# INLINE publishTo #-}
 
-batchPublishTo :: RingBuffer a -> Int -> Sequencer -> Int -> [a] -> IO ()
-batchPublishTo (RingBuffer mvec) modm seqr i vs = do
+batchPublishTo :: RingBuffer a -> Sequencer -> Int -> [a] -> IO ()
+batchPublishTo (RingBuffer mvec modm) seqr i vs = do
     next <- claim seqr i (MV.length mvec)
     mapM_ update $ zip [next - len + 1..next] vs
     publish seqr next len
@@ -76,15 +78,15 @@ batchPublishTo (RingBuffer mvec) modm seqr i vs = do
     update (n,x) = MV.unsafeWrite mvec (n .&. modm) x
 {-# INLINE batchPublishTo #-}
 
-concPublishTo :: RingBuffer a -> Int -> Sequencer -> Sequence -> a -> IO ()
-concPublishTo (RingBuffer mvec) modm seqr sq v = do
+concPublishTo :: RingBuffer a -> Sequencer -> Sequence -> a -> IO ()
+concPublishTo (RingBuffer mvec modm) seqr sq v = do
     next <- nextSeq seqr sq (MV.length mvec)
     MV.unsafeWrite mvec (next .&. modm) v
     publish seqr next 1
 {-# INLINE concPublishTo #-}
 
-concBatchPublishTo :: RingBuffer a -> Int -> Sequencer -> Sequence -> Int -> [a] -> IO ()
-concBatchPublishTo (RingBuffer mvec) modm seqr sq i vs = do
+concBatchPublishTo :: RingBuffer a -> Sequencer -> Sequence -> Int -> [a] -> IO ()
+concBatchPublishTo (RingBuffer mvec modm) seqr sq i vs = do
     next <- nextBatch seqr sq i (MV.length mvec)
     mapM_ update $ zip [next - len + 1..next] vs
     publish seqr next len

@@ -21,27 +21,26 @@ run i = do
 
     let xs = chunk 10 [0..i]
     forkIO $ mapM_ (pub buf seqr) xs
-    forkIO $ consumeAll buf modmask (newBarrier seqr []) con done
+    forkIO $ consumeAll buf (newBarrier seqr []) con done
 
     takeMVar done *> now >>= printTiming i start
 
   where
-      bufferSize = 1024*8
-      modmask    = bufferSize - 1
+    bufferSize = 1024*8
 
-      chunk n = takeWhile (not . null) . map (take n) . iterate (drop n)
+    chunk n = takeWhile (not . null) . map (take n) . iterate (drop n)
 
-      pub buf sqr chnk = do
-          let len = length chnk
-              lst = chnk !! (len - 1)
-          batchPublishTo buf modmask sqr lst chnk
+    pub buf sqr chnk = do
+        let len = length chnk
+            lst = chnk !! (len - 1)
+        batchPublishTo buf sqr lst chnk
 
-      consumeAll buf modm barr con lock = do
-          consumeFrom buf modm barr con
-          consumed <- consumerSeq con
-          if consumed == i
-              then putMVar lock ()
-              else consumeAll buf modm barr con lock
+    consumeAll buf barr con lock = do
+        consumeFrom buf barr con
+        consumed <- consumerSeq con
+        if consumed == i
+            then putMVar lock ()
+            else consumeAll buf barr con lock
 
 
 -- vim: set ts=4 sw=4 et:
