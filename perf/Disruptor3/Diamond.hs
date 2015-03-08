@@ -19,7 +19,7 @@ run i = do
     strt  <- now
     done  <- atomically newEmptyTMVar
     count <- newIORef (0 :: Int)
-    d     <- newRingBuffer (1024*8) (FizzBuzz <$> newIORef False <*> newIORef False <*> newIORef 0)
+    d     <- newSingleProducerRingBuffer (1024*8) (FizzBuzz <$> newIORef False <*> newIORef False <*> newIORef 0)
          >>= consumeWith (\ (FizzBuzz f _ _) -> writeIORef f True)
          >>= andAlso     (\ (FizzBuzz _ b _) -> writeIORef b True)
          >>= andThen     (\ (FizzBuzz f b _) -> do

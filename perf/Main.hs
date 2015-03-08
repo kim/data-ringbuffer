@@ -3,7 +3,6 @@ module Main where
 import Criterion.Types
 import Criterion.Main   (defaultMain)
 
-import qualified FalseSharing
 import qualified TChan.Multicast
 import qualified TChan.Unicast
 import qualified Disruptor3.Multicast
@@ -16,9 +15,7 @@ iterations = 1000000
 
 main :: IO ()
 main = defaultMain
-    [ --bench "FalseSharing.unpadded"   . nfIO . FalseSharing.unpadded       $ iterations
-    --, bench "FalseSharing.padded"     . nfIO . FalseSharing.padded         $ iterations
-    --, bench "TChan.Multicast"         . nfIO . TChan.Multicast.run         $ iterations
+    [ --, bench "TChan.Multicast"         . nfIO . TChan.Multicast.run         $ iterations
     --, bench "TChan.Unicast"           . nfIO . TChan.Unicast.run           $ iterations
       bench "Disruptor3.Multicast"    . nfIO . Disruptor3.Multicast.run    $ iterations
     , bench "Disruptor3.Unicast"      . nfIO . Disruptor3.Unicast.run      $ iterations

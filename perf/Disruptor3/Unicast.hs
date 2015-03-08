@@ -13,7 +13,7 @@ run i = do
     strt <- now
     done <- atomically newEmptyTMVar
     xs   <- newIORef ([] :: [Int])
-    d    <- newRingBuffer (1024*8) (newIORef 0)
+    d    <- newSingleProducerRingBuffer (1024*8) (newIORef 0)
         >>= consumeWith (readIORef >=> (\ x -> modifyIORef' xs (x:)))
         >>= andThen     (readIORef >=> (\ x -> when (x >= i) $ atomically (putTMVar done ())))
         >>= start

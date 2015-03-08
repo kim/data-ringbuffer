@@ -21,8 +21,11 @@ library
   exposed-modules:   Data.RingBuffer
                    , Data.RingBuffer.RingBuffer
                    , Data.RingBuffer.Sequence
-                   , Data.RingBuffer.Sequencer
                    , Data.RingBuffer.SequenceBarrier
+                   , Data.RingBuffer.Sequencer
+                   , Data.RingBuffer.Sequencer.Internal
+                   , Data.RingBuffer.Sequencer.MultiProducer
+                   , Data.RingBuffer.Sequencer.SingleProducer
   build-depends:     base >= 4 && < 5
                    , atomic-primops
                    , exceptions

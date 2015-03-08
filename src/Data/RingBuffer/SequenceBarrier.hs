@@ -10,13 +10,13 @@ import Data.RingBuffer.Sequence
 import Data.RingBuffer.Sequencer
 
 
-data SequenceBarrier
-    = SequenceBarrier !Sequencer
+data SequenceBarrier s
+    = SequenceBarrier !(Sequencer s)
                       [Sequence]
                       -- ^ dependent sequences
 
 
-waitFor :: MonadIO m => SequenceBarrier -> Int -> m Int
+waitFor :: MonadIO m => SequenceBarrier s -> Int -> m Int
 waitFor barrier@(SequenceBarrier sqr deps) sq = do
     avail <- case deps of
         [] -> readSequence (cursor sqr)
