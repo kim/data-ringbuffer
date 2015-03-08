@@ -37,7 +37,7 @@ data Sequencer
 
 mkSequencer :: MonadIO m => Int -> [Sequence] -> m Sequencer
 mkSequencer size gating = do
-    sq  <- mkSequence
+    sq  <- liftIO mkSequence
     nxt <- liftIO $ newIORef (-1)
     chd <- liftIO $ newIORef (-1)
     return $ Sequencer sq size' gating nxt chd
@@ -65,7 +65,7 @@ next (Sequencer _ s gs nxt cache) n = do
     let nextSequence = nextValue + n
         wrap         = nextSequence - s
 
-    when (wrap > gate || gate > nextValue) $ do
+    when (wrap > gate || gate > nextValue) $
         loop wrap (minimumSequence gs nextValue)
 
     liftIO $ writeIORef nxt nextSequence
@@ -73,7 +73,7 @@ next (Sequencer _ s gs nxt cache) n = do
     return nextSequence
   where
     loop !wrap m = do
-        minsq <- m
+        minsq <- liftIO m
         if wrap > minsq
             then do
                 liftIO yield
@@ -83,19 +83,19 @@ next (Sequencer _ s gs nxt cache) n = do
 {-# INLINABLE next #-}
 
 publish :: MonadIO m => Sequencer -> Int -> m ()
-publish (Sequencer c _ _ _ _) = writeSequence c
+publish (Sequencer c _ _ _ _) = liftIO . writeSequence c
 {-# INLINABLE publish #-}
 
 publishRange :: MonadIO m => Sequencer -> Int -> Int -> m ()
-publishRange s _ hi = publish s hi
+publishRange s _ = publish s
 {-# INLINABLE publishRange #-}
 
 isAvailable :: MonadIO m => Sequencer -> Int -> m Bool
-isAvailable (Sequencer c _ _ _ _) s = (s <=) `liftM` readSequence c
+isAvailable (Sequencer c _ _ _ _) s = (s <=) `liftM` liftIO (readSequence c)
 {-# INLINABLE isAvailable #-}
 
 highestPublishedSequence :: MonadIO m => Sequencer -> Int -> Int -> m Int
-highestPublishedSequence _ _ x = return x -- orly?!
+highestPublishedSequence _ _ = return -- orly?!
 {-# INLINABLE highestPublishedSequence #-}
 
 

@@ -18,7 +18,7 @@ data SequenceBarrier s
 
 waitFor :: MonadIO m => SequenceBarrier s -> Int -> m Int
 waitFor barrier@(SequenceBarrier sqr deps) sq = do
-    avail <- case deps of
+    avail <- liftIO $ case deps of
         [] -> readSequence (cursor sqr)
         xs -> minimumSequence xs maxBound
 

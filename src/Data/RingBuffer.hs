@@ -123,7 +123,7 @@ publishMany (Disruptor rb _ _) = RB.publishMany rb
 
 mkConsumer :: MonadIO m => RingBuffer a s -> (a -> m ()) -> [Sequence] -> m (Consumer m a s)
 mkConsumer b f deps = do
-    sq <- mkSequence
+    sq <- liftIO mkSequence
     return $ Consumer f sq (SequenceBarrier (RB.sequencer b) deps)
 
 consumerSequence :: Consumer m a s -> Sequence
@@ -136,11 +136,11 @@ run :: (MonadIO m, Forkable m, MonadMask m)
 run buf (Consumer f sq bar) = fork loop
   where
     loop = do
-        next  <- (+1) `liftM` readSequence sq
+        next  <- (+1) `liftM` liftIO (readSequence sq)
         avail <- waitFor bar next
 
         forM_ [next .. avail] (f . (buf `elemAt`))
-            `finally` writeSequence sq avail
+            `finally` liftIO (writeSequence sq avail)
         loop
 
 -- vim: set ts=4 sw=4 et:

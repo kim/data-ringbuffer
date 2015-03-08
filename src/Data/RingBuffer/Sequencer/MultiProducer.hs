@@ -42,8 +42,8 @@ data Sequencer
 
 mkSequencer :: MonadIO m => Int -> [Sequence] -> m Sequencer
 mkSequencer size gating = do
-    sq <- mkSequence
-    mn <- mkSequence
+    sq <- liftIO mkSequence
+    mn <- liftIO mkSequence
     ab <- liftIO $ MV.replicate size' (-1)
     return $ Sequencer sq size' gating mn ab (size' - 1) (log2 size')
   where
@@ -63,25 +63,25 @@ addGates (Sequencer sq siz gates cache ab msk shft) gates' =
 
 next :: MonadIO m => Sequencer -> Int -> m Int
 next sq@(Sequencer c s gs mcache _ _ _) n = do
-    curr <- readSequence c
+    curr <- liftIO $ readSequence c
 
     let nxt  = curr + n
         wrap = nxt - s
 
-    mingate <- readSequence mcache
+    mingate <- liftIO $ readSequence mcache
 
     if wrap > mingate || mingate > curr
         then do
-            mingate' <- minimumSequence gs curr
+            mingate' <- liftIO $ minimumSequence gs curr
             if wrap > mingate'
                 then do
                     liftIO yield
                     next sq n
                 else do
-                    writeSequence mcache mingate'
+                    liftIO $ writeSequence mcache mingate'
                     next sq n
         else do
-            cas'd <- casSequence c curr nxt
+            cas'd <- liftIO $ casSequence c curr nxt
             if cas'd
                 then return nxt
                 else next sq n

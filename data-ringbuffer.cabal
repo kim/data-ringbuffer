@@ -29,6 +29,7 @@ library
   build-depends:     base >= 4 && < 5
                    , atomic-primops
                    , exceptions
+                   , ghc-prim
                    , primitive
                    , stm
                    , transformers
