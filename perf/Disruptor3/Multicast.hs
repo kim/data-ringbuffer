@@ -12,10 +12,12 @@ run i = do
     strt <- now
     done <- atomically newEmptyTMVar
     xs   <- newIORef (0 :: Int)
-    d    <- newRingBuffer (1024*8) (newIORef 0)
+    ys   <- newIORef (0 :: Int)
+    zs   <- newIORef (0 :: Int)
+    d    <- newSingleProducerRingBuffer (1024*8) (newIORef 0)
         >>= consumeWith (\ _ -> atomicModifyIORef' xs (\ x -> (x+1,())))
-        >>= andAlso     (\ _ -> atomicModifyIORef' xs (\ x -> (x+1,())))
-        >>= andAlso     (\ _ -> atomicModifyIORef' xs (\ x -> (x+1,())))
+        >>= andAlso     (\ _ -> atomicModifyIORef' ys (\ y -> (y+1,())))
+        >>= andAlso     (\ _ -> atomicModifyIORef' zs (\ z -> (z+1,())))
         >>= andThen     (readIORef >=> (\ x -> when (x >= i) $ atomically (putTMVar done ())))
         >>= start
 
@@ -25,8 +27,11 @@ run i = do
     stop d
 
     nxs  <- readIORef xs
-    when (nxs /= (i + 1) * 3) $
-        error $ "expected " ++ show (i + 1) ++ " consumed entries, got: " ++ show nxs
+    nys  <- readIORef ys
+    nzs  <- readIORef zs
+    when (nxs + nys + nzs /= (i + 1) * 3) $
+        error $ "expected " ++ show (i + 1) ++ " consumed entries, got: "
+             ++ show (nxs + nys + nzs)
 
     now >>= printTiming i strt
 
