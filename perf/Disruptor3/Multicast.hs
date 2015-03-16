@@ -30,7 +30,7 @@ run i = do
     nys  <- readIORef ys
     nzs  <- readIORef zs
     when (nxs + nys + nzs /= (i + 1) * 3) $
-        error $ "expected " ++ show (i + 1) ++ " consumed entries, got: "
+        error $ "expected " ++ show ((i + 1) * 3) ++ " consumed entries, got: "
              ++ show (nxs + nys + nzs)
 
     now >>= printTiming i strt

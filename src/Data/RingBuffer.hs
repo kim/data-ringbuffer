@@ -1,8 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 
 module Data.RingBuffer
-    ( Forkable (..)
-    , newMultiProducerRingBuffer
+    ( newMultiProducerRingBuffer
     , newSingleProducerRingBuffer
     , consumeWith
     , andAlso
@@ -15,23 +14,23 @@ module Data.RingBuffer
 where
 
 import           Control.Concurrent
-import           Control.Monad                            (forM_, liftM, when)
-import           Control.Monad.Catch                      (MonadMask (..),
-                                                           finally)
-import           Control.Monad.IO.Class
+import           Control.Monad                   (forM_, liftM, when)
+import           Control.Monad.Catch             (finally)
 import           Data.IORef
-import           Data.RingBuffer.RingBuffer               (RingBuffer, elemAt,
-                                                           mkRingBuffer)
-import qualified Data.RingBuffer.RingBuffer               as RB
+import           Data.RingBuffer.RingBuffer      (RingBuffer, elemAt,
+                                                  mkRingBuffer)
+import qualified Data.RingBuffer.RingBuffer      as RB
 import           Data.RingBuffer.Sequence
 import           Data.RingBuffer.SequenceBarrier
-import           Data.RingBuffer.Sequencer                (mkMultiProducerSequencer, mkSingleProducerSequencer)
-import qualified Data.RingBuffer.Sequencer.MultiProducer  as Multi
-import qualified Data.RingBuffer.Sequencer.SingleProducer as Single
+import           Data.RingBuffer.Sequencer       ( SingleProducer
+                                                 , MultiProducer
+                                                 , mkMultiProducerSequencer
+                                                 , mkSingleProducerSequencer
+                                                 )
 
 
 data Consumer m a s
-    = Consumer (a -> m ())
+    = Consumer (a -> IO ())
                -- ^ event processing action
                !Sequence
                -- ^ tracks which events were consumed by this 'Consumer'
@@ -44,58 +43,40 @@ data ConsumerGroup m a s = ConsumerGroup
     , hs :: [Consumer m a s]
     }
 
-class Forkable m where
-    fork :: m () -> m ThreadId
-
-instance Forkable IO where
-    fork = forkIO
-
 data Disruptor a s = Disruptor (RingBuffer a s) [ThreadId] (IORef Bool)
 
-{-
- - data Event = Event { a :: IORef Int, b :: IORef Int, c :: IORef Int }
- -
- -     newRingBuffer 32 (Event <$> newIORef 0 <*> newIORef 0 <*> newIORef 0)
- - >>= consumeWith (\ Event{..} -> modifyIORef' a (+1))
- - >>= andAlso     (\ Event{..} -> modifyIORef' b (*10))
- - >>= andThen     (\ Event{..} -> do
- -                        a' <- readIORef a
- -                        b' <- readIORef b
- -                        modifyIORef' c (a' + b'))
- - >>= start
- -}
 
-newMultiProducerRingBuffer :: MonadIO m => Int -> m a -> m (RingBuffer a Multi.Sequencer)
+newMultiProducerRingBuffer :: Int -> IO a -> IO (RingBuffer a MultiProducer)
 newMultiProducerRingBuffer siz fill = do
     sqr <- mkMultiProducerSequencer siz []
     mkRingBuffer sqr fill
 
-newSingleProducerRingBuffer :: MonadIO m => Int -> m a -> m (RingBuffer a Single.Sequencer)
+newSingleProducerRingBuffer :: Int -> IO a -> IO (RingBuffer a SingleProducer)
 newSingleProducerRingBuffer siz fill = do
     sqr <- mkSingleProducerSequencer siz []
     mkRingBuffer sqr fill
 
-consumeWith :: MonadIO m => (a -> m ()) -> RingBuffer a s -> m (ConsumerGroup m a s)
+consumeWith :: (a -> IO ()) -> RingBuffer a s -> IO (ConsumerGroup m a s)
 consumeWith f b = do
     h <- mkConsumer b f []
     return $ ConsumerGroup b Nothing [h]
 
-andAlso :: MonadIO m => (a -> m ()) -> ConsumerGroup m a s -> m (ConsumerGroup m a s)
+andAlso :: (a -> IO ()) -> ConsumerGroup m a s -> IO (ConsumerGroup m a s)
 andAlso f cg@ConsumerGroup{..} = do
     h <- mkConsumer rb f []
     return cg { hs = h : hs }
 
-andThen :: MonadIO m => (a -> m ()) -> ConsumerGroup m a s -> m (ConsumerGroup m a s)
+andThen :: (a -> IO ()) -> ConsumerGroup m a s -> IO (ConsumerGroup m a s)
 andThen f cg@ConsumerGroup{..} = do
     h <- mkConsumer rb f (map consumerSequence hs)
     return cg { hs = [h], pr = Just cg }
 
 
-start :: (MonadIO m, Forkable m, MonadMask m) => ConsumerGroup m a s -> m (Disruptor a s)
+start :: ConsumerGroup m a s -> IO (Disruptor a s)
 start cg@ConsumerGroup{..} = do
     let rb' = RB.addGates rb (map consumerSequence hs)
     tids    <- startConsumers cg { rb = rb' }
-    running <- liftIO $ newIORef True
+    running <- newIORef True
     return $ Disruptor rb' tids running
   where
     startConsumers (ConsumerGroup rb' Nothing     cs) = mapM (run rb') cs
@@ -104,16 +85,16 @@ start cg@ConsumerGroup{..} = do
         t2 <- startConsumers $ ConsumerGroup  rb' Nothing cs
         return $ t1 ++ t2
 
-stop :: MonadIO m => Disruptor a s -> m ()
-stop (Disruptor _ tids ref) = liftIO $ do
-    running <- liftIO $ atomicModifyIORef ref ((,) False)
+stop :: Disruptor a s -> IO ()
+stop (Disruptor _ tids ref) = do
+    running <- atomicModifyIORef ref ((,) False)
     when running $
-        mapM_ (liftIO . killThread) tids
+        mapM_ killThread tids
 
-publish :: MonadIO m => Disruptor a s -> (a -> m ()) -> m ()
+publish :: Disruptor a s -> (a -> IO ()) -> IO ()
 publish (Disruptor rb _ _) = RB.publish rb
 
-publishMany :: MonadIO m => Disruptor a s -> Int -> (a -> m ()) -> m ()
+publishMany :: Disruptor a s -> Int -> (a -> IO ()) -> IO ()
 publishMany (Disruptor rb _ _) = RB.publishMany rb
 
 
@@ -121,26 +102,23 @@ publishMany (Disruptor rb _ _) = RB.publishMany rb
 -- internal
 --------------------------------------------------------------------------------
 
-mkConsumer :: MonadIO m => RingBuffer a s -> (a -> m ()) -> [Sequence] -> m (Consumer m a s)
+mkConsumer :: RingBuffer a s -> (a -> IO ()) -> [Sequence] -> IO (Consumer m a s)
 mkConsumer b f deps = do
-    sq <- liftIO mkSequence
+    sq <- mkSequence
     return $ Consumer f sq (SequenceBarrier (RB.sequencer b) deps)
 
 consumerSequence :: Consumer m a s -> Sequence
 consumerSequence (Consumer _ s _) = s
 
-run :: (MonadIO m, Forkable m, MonadMask m)
-    => RingBuffer a s
-    -> Consumer m a s
-    -> m ThreadId
-run buf (Consumer f sq bar) = fork loop
+run :: RingBuffer a s -> Consumer m a s -> IO ThreadId
+run buf (Consumer f sq bar) = forkIO loop
   where
     loop = do
-        next  <- (+1) `liftM` liftIO (readSequence sq)
+        next  <- (+1) `liftM` readSequence sq
         avail <- waitFor bar next
 
         forM_ [next .. avail] (f . (buf `elemAt`))
-            `finally` liftIO (writeSequence sq avail)
+            `finally` writeSequence sq avail
         loop
 
 -- vim: set ts=4 sw=4 et:

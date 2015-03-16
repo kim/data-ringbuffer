@@ -5,7 +5,6 @@ module Data.RingBuffer.SequenceBarrier
 where
 
 import Control.Concurrent        (yield)
-import Control.Monad.IO.Class
 import Data.RingBuffer.Sequence
 import Data.RingBuffer.Sequencer
 
@@ -16,14 +15,14 @@ data SequenceBarrier s
                       -- ^ dependent sequences
 
 
-waitFor :: MonadIO m => SequenceBarrier s -> Int -> m Int
+waitFor :: SequenceBarrier s -> Int -> IO Int
 waitFor barrier@(SequenceBarrier sqr deps) sq = do
-    avail <- liftIO $ case deps of
+    avail <- case deps of
         [] -> readSequence (cursor sqr)
         xs -> minimumSequence xs maxBound
 
     if avail >= sq
         then highestPublishedSequence sqr sq avail
-        else liftIO yield >> waitFor barrier sq
+        else yield >> waitFor barrier sq
 
 -- vim: set ts=4 sw=4 et:

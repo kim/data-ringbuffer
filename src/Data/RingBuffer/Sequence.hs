@@ -42,40 +42,46 @@ mkSequence = do
     raw <- mkRaw
     writeSequence raw (-1)
     return raw
-{-# INLINE mkSequence #-}
+{-# INLINABLE mkSequence #-}
 
 mkRaw :: IO Sequence
 mkRaw = IO $ \ s ->
     case newPinnedByteArray# size s of
         (# s', arr #) -> (# s', Sequence arr #)
   where
-    !(I# size) = SIZEOF_HSINT
-{-# INLINE mkRaw #-}
+    !(I# size) = SIZEOF_HSINT * 15
+{-# INLINABLE mkRaw #-}
 
 readSequence :: Sequence -> IO Int
 readSequence (Sequence arr) = IO $ \ s ->
-    case readIntArray# arr 0# s of
+    case readIntArray# arr off s of
         (# s', i #) -> (# s', I# i #)
-{-# INLINE readSequence #-}
+  where
+    !(I# off) = SIZEOF_HSINT
+{-# INLINABLE readSequence #-}
 
 writeSequence :: Sequence -> Int -> IO ()
 writeSequence (Sequence arr) (I# i) = IO $ \ s ->
-    case writeIntArray# arr 0# i s of
+    case writeIntArray# arr off i s of
         s' -> (# s', () #)
-{-# INLINE writeSequence #-}
+  where
+    !(I# off) = SIZEOF_HSINT
+{-# INLINABLE writeSequence #-}
 
 casSequence :: Sequence -> Int -> Int -> IO Bool
 casSequence (Sequence arr#) (I# old#) (I# new#) = IO $ \ s1# ->
-    let (# s2#, res# #) = casIntArray# arr# 0# old# new# s1#
+    let (# s2#, res# #) = casIntArray# arr# off old# new# s1#
      in case res# ==# old# of
         False -> (# s2#, False #)
         True  -> (# s2#, True  #)
-{-# INLINE casSequence #-}
+  where
+    !(I# off) = SIZEOF_HSINT
+{-# INLINABLE casSequence #-}
 
 minimumSequence :: [Sequence] -> Int -> IO Int
 minimumSequence [] def = return def
 minimumSequence ss def = return . foldl' min def =<< mapM readSequence ss
-{-# INLINE minimumSequence #-}
+{-# INLINABLE minimumSequence #-}
 
 
 -- vim: set ts=4 sw=4 et:

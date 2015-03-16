@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns  #-}
 
 module Data.RingBuffer.Sequencer.SingleProducer
     ( Sequencer (..)
@@ -16,8 +16,6 @@ where
 
 import Control.Concurrent                 (yield)
 import Control.Monad                      (liftM, when)
-import Control.Monad.IO.Class
-import Data.IORef
 import Data.RingBuffer.Sequence
 import Data.RingBuffer.Sequencer.Internal
 
@@ -29,17 +27,17 @@ data Sequencer
                 -- ^ buffer size
                 [Sequence]
                 -- ^ "gating" sequences
-                (IORef Int)
+                !Sequence
                 -- ^ next value
-                (IORef Int)
+                !Sequence
                 -- ^ cached value
 
 
-mkSequencer :: MonadIO m => Int -> [Sequence] -> m Sequencer
+mkSequencer :: Int -> [Sequence] -> IO Sequencer
 mkSequencer size gating = do
-    sq  <- liftIO mkSequence
-    nxt <- liftIO $ newIORef (-1)
-    chd <- liftIO $ newIORef (-1)
+    sq  <- mkSequence
+    nxt <- mkSequence
+    chd <- mkSequence
     return $ Sequencer sq size' gating nxt chd
   where
     size' = ceilNextPowerOfTwo size
@@ -57,10 +55,10 @@ addGates (Sequencer sq siz gates nxt cache) gates' =
     Sequencer sq siz (gates ++ gates') nxt cache
 {-# INLINABLE addGates #-}
 
-next :: MonadIO m => Sequencer -> Int -> m Int
-next (Sequencer _ s gs nxt cache) n = do
-    nextValue <- liftIO $ readIORef nxt
-    gate      <- liftIO $ readIORef cache
+next :: Sequencer -> Int -> IO Int
+next (Sequencer _ s gs nxt cache) n = {-# SCC "next" #-} do
+    nextValue <- readSequence nxt
+    gate      <- readSequence cache
 
     let nextSequence = nextValue + n
         wrap         = nextSequence - s
@@ -68,33 +66,33 @@ next (Sequencer _ s gs nxt cache) n = do
     when (wrap > gate || gate > nextValue) $
         loop wrap (minimumSequence gs nextValue)
 
-    liftIO $ writeIORef nxt nextSequence
+    writeSequence nxt nextSequence
 
     return nextSequence
   where
-    loop !wrap m = do
-        minsq <- liftIO m
+    loop !wrap m = {-# SCC "next.loop" #-} do
+        minsq <- m
         if wrap > minsq
             then do
-                liftIO yield
+                {-# SCC "next.loop.yield" #-} yield
                 loop wrap m
             else
-                liftIO $ writeIORef cache minsq
+                writeSequence cache minsq
 {-# INLINABLE next #-}
 
-publish :: MonadIO m => Sequencer -> Int -> m ()
-publish (Sequencer c _ _ _ _) = liftIO . writeSequence c
+publish :: Sequencer -> Int -> IO ()
+publish (Sequencer c _ _ _ _) = writeSequence c
 {-# INLINABLE publish #-}
 
-publishRange :: MonadIO m => Sequencer -> Int -> Int -> m ()
+publishRange :: Sequencer -> Int -> Int -> IO ()
 publishRange s _ = publish s
 {-# INLINABLE publishRange #-}
 
-isAvailable :: MonadIO m => Sequencer -> Int -> m Bool
-isAvailable (Sequencer c _ _ _ _) s = (s <=) `liftM` liftIO (readSequence c)
+isAvailable :: Sequencer -> Int -> IO Bool
+isAvailable (Sequencer c _ _ _ _) s = (s <=) `liftM` readSequence c
 {-# INLINABLE isAvailable #-}
 
-highestPublishedSequence :: MonadIO m => Sequencer -> Int -> Int -> m Int
+highestPublishedSequence :: Sequencer -> Int -> Int -> IO Int
 highestPublishedSequence _ _ = return -- orly?!
 {-# INLINABLE highestPublishedSequence #-}
 

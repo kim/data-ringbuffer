@@ -26,7 +26,7 @@ run i = do
                             f' <- readIORef f
                             b' <- readIORef b
                             when (f' && b') $
-                                atomicModifyIORef' count (\ x -> (x+1,())))
+                                modifyIORef' count (+1))
          >>= andThen     (readIORef . pub >=> (\ x -> when (x >= i) $ atomically (putTMVar done ())))
          >>= start
 

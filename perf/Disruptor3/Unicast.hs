@@ -1,6 +1,5 @@
 module Disruptor3.Unicast (run) where
 
-import Control.Applicative
 import Control.Concurrent.STM
 import Control.Monad
 import Data.IORef
@@ -12,9 +11,9 @@ run :: Int -> IO ()
 run i = do
     strt <- now
     done <- atomically newEmptyTMVar
-    xs   <- newIORef ([] :: [Int])
+    xs   <- newIORef (0 :: Int)
     d    <- newSingleProducerRingBuffer (1024*8) (newIORef 0)
-        >>= consumeWith (readIORef >=> (\ x -> modifyIORef' xs (x:)))
+        >>= consumeWith (\ _ -> modifyIORef' xs (+1))
         >>= andThen     (readIORef >=> (\ x -> when (x >= i) $ atomically (putTMVar done ())))
         >>= start
 
@@ -23,7 +22,7 @@ run i = do
     atomically $ takeTMVar done
     stop d
 
-    nxs  <- length <$> readIORef xs
+    nxs  <- readIORef xs
     when (nxs /= (i + 1)) $
         error $ "expected " ++ show (i + 1) ++ " consumed entries, got: " ++ show nxs
 

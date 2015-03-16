@@ -15,9 +15,9 @@ iterations = 1000000
 
 main :: IO ()
 main = defaultMain
-    [ --, bench "TChan.Multicast"         . nfIO . TChan.Multicast.run         $ iterations
-    --, bench "TChan.Unicast"           . nfIO . TChan.Unicast.run           $ iterations
-      bench "Disruptor3.Multicast"    . nfIO . Disruptor3.Multicast.run    $ iterations
+    [ bench "TChan.Multicast"         . nfIO . TChan.Multicast.run         $ iterations
+    , bench "TChan.Unicast"           . nfIO . TChan.Unicast.run           $ iterations
     , bench "Disruptor3.Unicast"      . nfIO . Disruptor3.Unicast.run      $ iterations
+    , bench "Disruptor3.Multicast"    . nfIO . Disruptor3.Multicast.run    $ iterations
     , bench "Disruptor3.Diamond"      . nfIO . Disruptor3.Diamond.run      $ iterations
     ]
