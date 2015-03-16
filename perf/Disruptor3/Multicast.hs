@@ -15,9 +15,9 @@ run i = do
     ys   <- newIORef (0 :: Int)
     zs   <- newIORef (0 :: Int)
     d    <- newSingleProducerRingBuffer (1024*8) (newIORef 0)
-        >>= consumeWith (\ _ -> atomicModifyIORef' xs (\ x -> (x+1,())))
-        >>= andAlso     (\ _ -> atomicModifyIORef' ys (\ y -> (y+1,())))
-        >>= andAlso     (\ _ -> atomicModifyIORef' zs (\ z -> (z+1,())))
+        >>= consumeWith (\ _ -> modifyIORef' xs (+1))
+        >>= andAlso     (\ _ -> modifyIORef' ys (+1))
+        >>= andAlso     (\ _ -> modifyIORef' zs (+1))
         >>= andThen     (readIORef >=> (\ x -> when (x >= i) $ atomically (putTMVar done ())))
         >>= start
 
