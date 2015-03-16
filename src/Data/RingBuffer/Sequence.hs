@@ -54,28 +54,22 @@ mkRaw = IO $ \ s ->
 
 readSequence :: Sequence -> IO Int
 readSequence (Sequence arr) = IO $ \ s ->
-    case readIntArray# arr off s of
+    case readIntArray# arr 7# s of
         (# s', i #) -> (# s', I# i #)
-  where
-    !(I# off) = SIZEOF_HSINT
 {-# INLINABLE readSequence #-}
 
 writeSequence :: Sequence -> Int -> IO ()
 writeSequence (Sequence arr) (I# i) = IO $ \ s ->
-    case writeIntArray# arr off i s of
+    case writeIntArray# arr 7# i s of
         s' -> (# s', () #)
-  where
-    !(I# off) = SIZEOF_HSINT
 {-# INLINABLE writeSequence #-}
 
 casSequence :: Sequence -> Int -> Int -> IO Bool
 casSequence (Sequence arr#) (I# old#) (I# new#) = IO $ \ s1# ->
-    let (# s2#, res# #) = casIntArray# arr# off old# new# s1#
+    let (# s2#, res# #) = casIntArray# arr# 7# old# new# s1#
      in case res# ==# old# of
         False -> (# s2#, False #)
         True  -> (# s2#, True  #)
-  where
-    !(I# off) = SIZEOF_HSINT
 {-# INLINABLE casSequence #-}
 
 minimumSequence :: [Sequence] -> Int -> IO Int
