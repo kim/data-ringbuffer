@@ -1,3 +1,8 @@
 dist
 *.swp
 cabal-dev
+.cabal-sandbox
+*.hi
+*.o
+cabal.sandbox.config
+tags
